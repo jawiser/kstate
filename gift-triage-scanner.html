@@ -181,7 +181,8 @@
       <input type="text" id="manualIsbn" inputmode="numeric" placeholder="…or type the ISBN" aria-label="Type an ISBN">
       <button class="btnGhost" id="manualGo">Check</button>
     </div>
-    <p class="hint">Point the camera at the barcode above the ISBN number. The scanner reads EAN-13 codes beginning 978 or 979. If the camera is blocked in this preview, type the ISBN or open this file in your phone's browser.</p>
+    <p class="hint" id="scanNote" style="opacity:0;transition:opacity .4s;min-height:1em;color:#9a5b00;font-weight:600"></p>
+    <p class="hint">Aim at the barcode that starts with 978 or 979 (usually the larger one, printed above the ISBN number). The scanner now ignores the smaller UPC price barcode automatically. If the camera is blocked in this preview, type the ISBN or open this file in your phone's browser.</p>
   </div>
 
   <div class="panel">
@@ -387,9 +388,7 @@ toggleBtn.addEventListener('click', async () => {
     toggleBtn.textContent = 'Starting\u2026';
     scanner = new Html5Qrcode('reader', {
       formatsToSupport: [
-        Html5QrcodeSupportedFormats.EAN_13,
-        Html5QrcodeSupportedFormats.EAN_8,
-        Html5QrcodeSupportedFormats.UPC_A
+        Html5QrcodeSupportedFormats.EAN_13
       ]
     });
     await scanner.start(
@@ -414,11 +413,26 @@ async function stopCam(){
 
 function onScan(text){
   const isbn = cleanIsbn(text);
+  // Only act on real Bookland ISBNs (978/979). Books carry a second UPC
+  // price barcode next to the ISBN; skip anything that isn't the ISBN.
+  if(!/^97[89]\d{10}$/.test(isbn)){
+    noteSkip();
+    return;
+  }
   const now = Date.now();
   if(isbn === lastIsbn && now - lastTime < 4000) return;  // debounce repeats
   lastIsbn = isbn; lastTime = now;
   if(navigator.vibrate) navigator.vibrate(60);
   lookup(isbn);
+}
+
+let skipTimer = null;
+function noteSkip(){
+  const el = document.getElementById('scanNote');
+  el.textContent = 'Skipped a price barcode \u2014 aim at the one starting 978 or 979';
+  el.style.opacity = '1';
+  clearTimeout(skipTimer);
+  skipTimer = setTimeout(()=>{ el.style.opacity = '0'; }, 2500);
 }
 </script>
 </body>
