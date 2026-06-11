@@ -171,6 +171,8 @@
     <ul class="holdings" id="vHoldings"></ul>
     <div class="actions">
       <button class="btnGhost" id="openPrimo">Open in Search It</button>
+      <button class="btnGhost" id="titleSearch" style="display:none"></button>
+      <button class="btnGhost" id="rawReply" style="display:none">Raw Alma reply</button>
       <button class="btnGhost" id="scanNext">Scan next book</button>
     </div>
   </div>
@@ -254,6 +256,8 @@ let lastIsbn = '', lastTime = 0, currentIsbn = '';
 const tallies = { held:0, notheld:0, unknown:0 };
 
 /* ============ Lookup ============ */
+let lastQueryUrl = '';
+
 async function lookup(rawIsbn){
   const isbn = cleanIsbn(rawIsbn);
   if(!validIsbn(isbn)){
@@ -267,31 +271,31 @@ async function lookup(rawIsbn){
   const forms = [isbn];
   const alt = isbn.length === 13 ? isbn13to10(isbn) : null;
   if(alt) forms.push(alt);
-  const cql = forms.map(f => 'alma.isbn==' + f).join(' or ');
-  const sruUrl = cfg.sru + '?version=1.2&operation=searchRetrieve&recordSchema=marcxml&maximumRecords=5&query=' + encodeURIComponent(cql);
-  const url = cfg.proxy ? cfg.proxy + encodeURIComponent(sruUrl) : sruUrl;
 
+  // Two attempts: the dedicated ISBN index first, then a general keyword
+  // search for the bare number, which also catches ISBNs stored with
+  // qualifiers or in secondary fields.
+  const attempts = [
+    forms.map(f => 'alma.isbn=' + f).join(' or '),
+    forms.map(f => 'alma.all_for_ui=' + f).join(' or ')
+  ];
+
+  let n = -1, doc = null;
   try{
-    const ctrl = new AbortController();
-    const timer = setTimeout(()=>ctrl.abort(), 9000);
-    const res = await fetch(url, { signal: ctrl.signal });
-    clearTimeout(timer);
-    if(!res.ok) throw new Error('HTTP ' + res.status);
-    const xmlText = await res.text();
-    const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-    const numEl = doc.getElementsByTagNameNS('*','numberOfRecords')[0];
-    const n = numEl ? parseInt(numEl.textContent,10) : 0;
-
-    if(n > 0){
-      const { title, year, holdings } = parseFirstRecord(doc);
-      const meta = (year ? 'Published ' + year + '. ' : '') +
-        n + (n===1 ? ' catalog record matches' : ' catalog records match') + ' this ISBN.';
-      showVerdict('held','ALREADY HELD', isbn, title, meta, holdings);
-      bump('held', title || isbn);
-    }else{
-      showVerdict('notheld','NOT IN CATALOG', isbn, '',
-        'No record matches this ISBN. A different edition might still be held \u2014 tap below to double-check by title in Search It.', []);
-      bump('notheld', isbn);
+    for(const cql of attempts){
+      const sruUrl = cfg.sru + '?version=1.2&operation=searchRetrieve&recordSchema=marcxml&maximumRecords=5&query=' + encodeURIComponent(cql);
+      lastQueryUrl = cfg.proxy ? cfg.proxy + encodeURIComponent(sruUrl) : sruUrl;
+      const ctrl = new AbortController();
+      const timer = setTimeout(()=>ctrl.abort(), 9000);
+      const res = await fetch(lastQueryUrl, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      const xmlText = await res.text();
+      doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+      const numEl = doc.getElementsByTagNameNS('*','numberOfRecords')[0];
+      if(!numEl){ n = -1; continue; }     // diagnostic or unexpected reply; try next form
+      n = parseInt(numEl.textContent,10);
+      if(n > 0) break;                    // found it; stop trying
     }
   }catch(err){
     spinner.classList.remove('show');
@@ -300,7 +304,49 @@ async function lookup(rawIsbn){
     bump('unknown', isbn);
     return;
   }
+
   spinner.classList.remove('show');
+  if(n > 0){
+    const { title, year, holdings } = parseFirstRecord(doc);
+    const meta = (year ? 'Published ' + year + '. ' : '') +
+      n + (n===1 ? ' catalog record matches' : ' catalog records match') + ' this ISBN.';
+    showVerdict('held','ALREADY HELD', isbn, title, meta, holdings);
+    bump('held', title || isbn);
+  }else if(n === 0){
+    showVerdict('notheld','NOT THIS ISBN', isbn, '',
+      'No record matches this exact ISBN. We may still hold another edition, printing, or the ebook under a different ISBN.', []);
+    bump('notheld', isbn);
+    titleAssist(isbn);   // look up what this book is, to enable a title check
+  }else{
+    showVerdict('unknown','CHECK MANUALLY', isbn, '',
+      'Alma answered, but not in the expected format, so this is a query problem rather than a catalog answer. Tap \u201cRaw Alma reply\u201d below and send me what it says.', []);
+    bump('unknown', isbn);
+  }
+}
+
+/* When the exact ISBN finds nothing, ask Google Books what the book is,
+   then offer a one-tap title search in Primo. Catches the very common
+   case where the library holds the ebook or a different edition. */
+let assistTitle = '';
+async function titleAssist(isbn){
+  assistTitle = '';
+  $('titleSearch').style.display = 'none';
+  try{
+    const ctrl = new AbortController();
+    const timer = setTimeout(()=>ctrl.abort(), 6000);
+    const r = await fetch('https://www.googleapis.com/books/v1/volumes?q=isbn:' + isbn, { signal: ctrl.signal });
+    clearTimeout(timer);
+    const j = await r.json();
+    const vi = j && j.items && j.items[0] && j.items[0].volumeInfo;
+    if(vi && vi.title){
+      assistTitle = vi.title;
+      const who = vi.authors && vi.authors.length ? ' by ' + vi.authors.join(', ') : '';
+      $('vMeta').textContent += ' This appears to be \u201c' + vi.title + '\u201d' + who + '.';
+      const btn = $('titleSearch');
+      btn.textContent = 'Check by title in Search It';
+      btn.style.display = 'inline-block';
+    }
+  }catch(e){ /* best effort */ }
 }
 
 function parseFirstRecord(doc){
@@ -337,9 +383,11 @@ function showVerdict(kind, status, isbn, title, meta, holdings){
   spinner.classList.remove('show');
   verdict.className = 'verdict show ' + kind;
   $('vStatus').textContent = status;
-  $('vIsbn').textContent = 'ISBN ' + isbn;
+  $('vIsbn').textContent = isbn ? 'ISBN ' + isbn : '';
   $('vTitle').textContent = title || '';
   $('vMeta').textContent = meta || '';
+  $('titleSearch').style.display = 'none';
+  $('rawReply').style.display = (kind !== 'held' && lastQueryUrl) ? 'inline-block' : 'none';
   const ul = $('vHoldings'); ul.innerHTML = '';
   for(const h of holdings){
     const li = document.createElement('li');
@@ -373,6 +421,15 @@ $('openPrimo').addEventListener('click', () => {
   const u = cfg.primoBase + '?query=any,contains,' + encodeURIComponent(currentIsbn) +
             '&vid=' + encodeURIComponent(cfg.vid);
   window.open(u, '_blank', 'noopener');
+});
+$('titleSearch').addEventListener('click', () => {
+  if(!assistTitle) return;
+  const u = cfg.primoBase + '?query=title,contains,' + encodeURIComponent(assistTitle) +
+            '&vid=' + encodeURIComponent(cfg.vid);
+  window.open(u, '_blank', 'noopener');
+});
+$('rawReply').addEventListener('click', () => {
+  if(lastQueryUrl) window.open(lastQueryUrl, '_blank', 'noopener');
 });
 $('scanNext').addEventListener('click', () => {
   verdict.classList.remove('show');
