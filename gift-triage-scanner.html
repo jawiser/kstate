@@ -6,7 +6,7 @@
 <title>Gift Triage Scanner · K-State Libraries</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;700;900&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
 <style>
   :root{
     --purple:#512888;
@@ -52,9 +52,13 @@
   /* Scanner */
   #reader{
     width:100%;border-radius:8px;overflow:hidden;background:#14101c;
-    min-height:40px;
+    min-height:40px;position:relative;
   }
-  #reader video{border-radius:8px}
+  #reader video{border-radius:8px;display:block;width:100%}
+  #reader canvas.drawingBuffer{
+    position:absolute;top:0;left:0;width:100% !important;height:100% !important;
+    pointer-events:none;
+  }
   .scanRow{display:flex;gap:8px;margin-top:10px}
   button{
     font-family:inherit;font-size:15px;font-weight:600;
@@ -415,69 +419,162 @@ function heartbeat(){
 }
 
 /* ============ Camera ============ */
-let scanner = null, scanning = false;
+let stream = null, video = null, scanning = false;
+let detector = null, usingQuagga = false, rafId = null, lastDetectAt = 0;
+let candidate = '', candidateHits = 0;
 const toggleBtn = $('toggleCam');
+const readerEl = document.getElementById('reader');
 
 toggleBtn.addEventListener('click', async () => {
   if(scanning){ await stopCam(); return; }
   ensureAudio();  // must be created inside a user tap for iOS to allow sound
+  toggleBtn.textContent = 'Starting\u2026';
   try{
-    toggleBtn.textContent = 'Starting\u2026';
-    scanner = new Html5Qrcode('reader', {
-      formatsToSupport: [
-        Html5QrcodeSupportedFormats.EAN_13
-      ]
-    });
-    await scanner.start(
-      { facingMode: 'environment' },
-      {
-        fps: 15,
-        qrbox: (vw, vh) => ({
-          width: Math.min(340, Math.floor(vw * 0.85)),
-          height: 170
-        })
-      },
-      onScan,
-      heartbeat   // fires on every frame with no read; powers the live readout
-    );
+    const native = await tryNativeDetector();
+    if(!native) await startQuagga();
     scanning = true;
     toggleBtn.textContent = 'Stop camera';
-    setReadout('Camera on. Hold the barcode 4\u20138 inches away.', 2500);
-    tuneCamera();
+    setReadout('Camera on (' + (native ? 'native' : 'Quagga') + ' engine). Hold the barcode 5\u201310 inches away.', 3000);
   }catch(err){
-    toggleBtn.textContent = 'Start camera';
+    await stopCam();
     showVerdict('unknown','CAMERA UNAVAILABLE','','',
       'This environment blocked camera access (common in embedded previews). Type the ISBN below instead, or open this file directly in Safari or Chrome on your phone.',[]);
   }
 });
 
+/* Path 1: the browser's built-in BarcodeDetector (Apple Vision / Google ML).
+   Far more accurate than any JavaScript decoder when present. */
+async function tryNativeDetector(){
+  if(!('BarcodeDetector' in window)) return false;
+  let fmts = [];
+  try{ fmts = await window.BarcodeDetector.getSupportedFormats(); }catch(e){ return false; }
+  if(!fmts || !fmts.includes('ean_13')) return false;
+  detector = new window.BarcodeDetector({ formats: ['ean_13'] });
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+    audio: false
+  });
+  video = document.createElement('video');
+  video.setAttribute('playsinline', 'true');
+  video.muted = true;
+  video.style.width = '100%';
+  video.style.borderRadius = '8px';
+  readerEl.innerHTML = '';
+  readerEl.appendChild(video);
+  video.srcObject = stream;
+  await video.play();
+  tuneTrack(stream.getVideoTracks()[0]);
+  detectLoop();
+  return true;
+}
+
+function detectLoop(){
+  if(!detector || !video) return;
+  rafId = requestAnimationFrame(detectLoop);
+  const now = Date.now();
+  if(now - lastDetectAt < 90) return;   // ~11 checks per second
+  lastDetectAt = now;
+  detector.detect(video).then(codes => {
+    if(codes && codes.length) acceptRead(codes[0].rawValue, true);
+    else heartbeat();
+  }).catch(() => heartbeat());
+}
+
+/* Path 2: Quagga, a JavaScript decoder built specifically for striped
+   1D retail barcodes (EAN/UPC). Much stronger on these than QR-first
+   libraries. Runs when the browser has no native detector. */
+async function startQuagga(){
+  if(typeof Quagga === 'undefined') throw new Error('decoder unavailable');
+  usingQuagga = true;
+  readerEl.innerHTML = '';
+  await new Promise((resolve, reject) => {
+    Quagga.init({
+      inputStream: {
+        name: 'Live',
+        type: 'LiveStream',
+        target: readerEl,
+        constraints: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+      },
+      locator: { patchSize: 'medium', halfSample: true },
+      numOfWorkers: 0,
+      frequency: 10,
+      decoder: { readers: ['ean_reader'] },
+      locate: true
+    }, err => err ? reject(err) : resolve());
+  });
+  Quagga.start();
+  const v = readerEl.querySelector('video');
+  if(v){
+    v.setAttribute('playsinline', 'true');
+    v.muted = true;
+    v.style.width = '100%';
+    v.style.borderRadius = '8px';
+    const t = v.srcObject && v.srcObject.getVideoTracks ? v.srcObject.getVideoTracks()[0] : null;
+    if(t) tuneTrack(t);
+  }
+  Quagga.onProcessed(() => heartbeat());
+  Quagga.onDetected(res => {
+    const code = res && res.codeResult ? res.codeResult.code : '';
+    if(code) acceptRead(code, false);
+  });
+}
+
+/* Quagga occasionally misreads a digit; the native detector almost never
+   does. So Quagga reads must repeat twice in a row before we accept. */
+function acceptRead(raw, trusted){
+  const digits = cleanIsbn(String(raw));
+  if(!trusted){
+    if(digits === candidate){ candidateHits++; }
+    else { candidate = digits; candidateHits = 1; }
+    if(candidateHits < 2){
+      setReadout('Reading\u2026 ' + digits, 600);
+      return;
+    }
+    candidate = ''; candidateHits = 0;
+  }
+  handleIsbnRead(digits);
+}
+
 /* Ask the camera for continuous focus and a touch of zoom, where supported.
    Zoom lets the phone sit farther from the book while the barcode still
    fills the frame, which avoids the close-focus blur problem. */
-async function tuneCamera(){
+async function tuneTrack(track){
   try{
-    const caps = scanner.getRunningTrackCapabilities();
-    const constraints = { advanced: [{}] };
+    if(!track || !track.getCapabilities) return;
+    const caps = track.getCapabilities();
+    const adv = {};
     let any = false;
-    if(caps && caps.focusMode && Array.from(caps.focusMode).includes('continuous')){
-      constraints.advanced[0].focusMode = 'continuous'; any = true;
+    if(caps.focusMode && Array.from(caps.focusMode).includes('continuous')){
+      adv.focusMode = 'continuous'; any = true;
     }
-    if(caps && caps.zoom && caps.zoom.max){
-      constraints.advanced[0].zoom = Math.min(2, caps.zoom.max); any = true;
+    if(caps.zoom && caps.zoom.max){
+      adv.zoom = Math.min(2, caps.zoom.max); any = true;
     }
-    if(any) await scanner.applyVideoConstraints(constraints);
+    if(any) await track.applyConstraints({ advanced: [adv] });
   }catch(e){ /* best effort; not all browsers expose these */ }
 }
 
 async function stopCam(){
-  try{ if(scanner){ await scanner.stop(); scanner.clear(); } }catch(e){}
+  if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
+  detector = null;
+  if(usingQuagga){
+    try{ Quagga.stop(); }catch(e){}
+    try{ Quagga.offDetected(); Quagga.offProcessed(); }catch(e){}
+    usingQuagga = false;
+  }
+  if(stream){
+    try{ stream.getTracks().forEach(t => t.stop()); }catch(e){}
+    stream = null;
+  }
+  readerEl.innerHTML = '';
+  video = null;
   scanning = false;
+  candidate = ''; candidateHits = 0;
   toggleBtn.textContent = 'Start camera';
   setReadout('', 0);
 }
 
-function onScan(text){
-  const isbn = cleanIsbn(text);
+function handleIsbnRead(isbn){
   // Only act on real Bookland ISBNs (978/979). Books carry a second UPC
   // price barcode next to the ISBN; skip anything that isn't the ISBN.
   if(!/^97[89]\d{10}$/.test(isbn)){
