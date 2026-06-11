@@ -174,6 +174,7 @@
   <div class="panel">
     <h2>Scan the ISBN barcode (back cover)</h2>
     <div id="reader"></div>
+    <div id="liveRead" style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:var(--purple-dark);min-height:1.3em;padding:6px 2px 0;" aria-live="polite"></div>
     <div class="scanRow">
       <button class="btnPrimary" id="toggleCam">Start camera</button>
     </div>
@@ -378,12 +379,48 @@ $('scanNext').addEventListener('click', () => {
 $('manualGo').addEventListener('click', () => lookup($('manualIsbn').value));
 $('manualIsbn').addEventListener('keydown', e => { if(e.key === 'Enter') lookup(e.target.value); });
 
+/* ============ Sound ============ */
+let audioCtx = null;
+function ensureAudio(){
+  try{
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+  }catch(e){ audioCtx = null; }
+}
+function beep(freq, ms, vol){
+  if(!audioCtx) return;
+  try{
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'square'; o.frequency.value = freq;
+    g.gain.value = vol || 0.2;
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start();
+    setTimeout(() => { try{ o.stop(); o.disconnect(); g.disconnect(); }catch(e){} }, ms);
+  }catch(e){}
+}
+
+/* ============ Live readout ============ */
+const liveRead = $('liveRead');
+let heartbeatLast = 0, dotCount = 0, readoutHold = 0;
+function setReadout(msg, holdMs){
+  liveRead.textContent = msg;
+  readoutHold = Date.now() + (holdMs || 0);
+}
+function heartbeat(){
+  const now = Date.now();
+  if(now < readoutHold || now - heartbeatLast < 600) return;  // don't stomp messages
+  heartbeatLast = now;
+  dotCount = (dotCount + 1) % 4;
+  liveRead.textContent = 'Looking for a barcode' + '.'.repeat(dotCount + 1);
+}
+
 /* ============ Camera ============ */
 let scanner = null, scanning = false;
 const toggleBtn = $('toggleCam');
 
 toggleBtn.addEventListener('click', async () => {
   if(scanning){ await stopCam(); return; }
+  ensureAudio();  // must be created inside a user tap for iOS to allow sound
   try{
     toggleBtn.textContent = 'Starting\u2026';
     scanner = new Html5Qrcode('reader', {
@@ -393,11 +430,20 @@ toggleBtn.addEventListener('click', async () => {
     });
     await scanner.start(
       { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 260, height: 130 } },
-      onScan
+      {
+        fps: 15,
+        qrbox: (vw, vh) => ({
+          width: Math.min(340, Math.floor(vw * 0.85)),
+          height: 170
+        })
+      },
+      onScan,
+      heartbeat   // fires on every frame with no read; powers the live readout
     );
     scanning = true;
     toggleBtn.textContent = 'Stop camera';
+    setReadout('Camera on. Hold the barcode 4\u20138 inches away.', 2500);
+    tuneCamera();
   }catch(err){
     toggleBtn.textContent = 'Start camera';
     showVerdict('unknown','CAMERA UNAVAILABLE','','',
@@ -405,10 +451,29 @@ toggleBtn.addEventListener('click', async () => {
   }
 });
 
+/* Ask the camera for continuous focus and a touch of zoom, where supported.
+   Zoom lets the phone sit farther from the book while the barcode still
+   fills the frame, which avoids the close-focus blur problem. */
+async function tuneCamera(){
+  try{
+    const caps = scanner.getRunningTrackCapabilities();
+    const constraints = { advanced: [{}] };
+    let any = false;
+    if(caps && caps.focusMode && Array.from(caps.focusMode).includes('continuous')){
+      constraints.advanced[0].focusMode = 'continuous'; any = true;
+    }
+    if(caps && caps.zoom && caps.zoom.max){
+      constraints.advanced[0].zoom = Math.min(2, caps.zoom.max); any = true;
+    }
+    if(any) await scanner.applyVideoConstraints(constraints);
+  }catch(e){ /* best effort; not all browsers expose these */ }
+}
+
 async function stopCam(){
   try{ if(scanner){ await scanner.stop(); scanner.clear(); } }catch(e){}
   scanning = false;
   toggleBtn.textContent = 'Start camera';
+  setReadout('', 0);
 }
 
 function onScan(text){
@@ -416,13 +481,17 @@ function onScan(text){
   // Only act on real Bookland ISBNs (978/979). Books carry a second UPC
   // price barcode next to the ISBN; skip anything that isn't the ISBN.
   if(!/^97[89]\d{10}$/.test(isbn)){
+    beep(220, 90, 0.15);                       // low blip: read something, wrong barcode
+    setReadout('Read ' + isbn + ' \u2014 that\u2019s the price barcode. Slide to the 978/979 one.', 2200);
     noteSkip();
     return;
   }
   const now = Date.now();
   if(isbn === lastIsbn && now - lastTime < 4000) return;  // debounce repeats
   lastIsbn = isbn; lastTime = now;
+  beep(1175, 140, 0.25);                       // high beep: ISBN captured
   if(navigator.vibrate) navigator.vibrate(60);
+  setReadout('Read ISBN ' + isbn + ' \u2014 checking the catalog\u2026', 3000);
   lookup(isbn);
 }
 
