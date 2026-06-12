@@ -56,33 +56,10 @@
       <div><div class="num" id="tUnk">0</div><div class="lbl">Check manually</div></div>
     </div>
     <div class="historyActions">
-      <button class="btnGhost" id="exportCsv">Export CSV</button>
-      <button class="btnGhost" id="exportDiagnostics">Export diagnostics</button>
       <button class="btnDanger" id="clearHistory">Clear history</button>
     </div>
     <ul id="history"></ul>
-  </div>
-
-  <div class="panel">
-    <details>
-      <summary>Connection settings</summary>
-      <div class="field">
-        <label for="sruBase">Alma SRU endpoint</label>
-        <input type="text" id="sruBase" value="">
-      </div>
-      <div class="field">
-        <label for="proxyBase">Optional proxy prefix (if direct Alma calls are blocked by CORS)</label>
-        <input type="text" id="proxyBase" value="" placeholder="https://your-library-proxy.example.edu/sru?url=">
-      </div>
-      <div class="field">
-        <label for="primoVid">Primo view (vid)</label>
-        <input type="text" id="primoVid" value="">
-      </div>
-      <div class="settingsActions">
-        <button class="btnGhost" id="resetSettings">Reset defaults</button>
-      </div>
-      <p class="hint">Settings are saved in this browser. The scan history and diagnostics exports are local files; no remote logging is used.</p>
-    </details>
+    <p class="hint">Scan history is saved in this browser only; no remote logging is used.</p>
   </div>
 
   <footer>PROTOTYPE &middot; READ-ONLY &middot; SCAN DATA STAYS IN THIS BROWSER EXCEPT CATALOG SEARCHES</footer>
