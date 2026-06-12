@@ -1,5 +1,6 @@
-// helpers.js - pure logic with no browser stuff in it, so it can be tested
-// with node directly. Everything DOM/camera related lives in app.js.
+// helpers.js - pure logic (ISBN math, SRU URL building, XML parsing) with no
+// browser stuff in it, so it can be tested with node directly. Everything
+// DOM/camera related lives in app.js.
 
 // ---------------------------------------------------------------------------
 // ISBN functions
@@ -159,34 +160,4 @@ export function parse_sru_response(doc){
   }
 
   return { count: count, title: title, year: year, holdings: holdings };
-}
-
-// ---------------------------------------------------------------------------
-// CSV export
-// ---------------------------------------------------------------------------
-
-// Quote a CSV cell if it contains a comma, quote or newline.
-function csv_cell(value){
-  const text = String(value === null || value === undefined ? '' : value);
-  if(/[",\n\r]/.test(text)){
-    return '"' + text.replaceAll('"', '""') + '"';
-  }
-  return text;
-}
-
-// Turn the scan history into CSV text with a header row.
-export function history_to_csv(history){
-  const lines = ['timestamp,isbn,verdict,title,source,error_category'];
-  for(const entry of history){
-    const row = [
-      entry.at,
-      entry.isbn,
-      entry.verdict,
-      entry.title || '',
-      entry.source || '',
-      entry.error_category || ''
-    ];
-    lines.push(row.map(csv_cell).join(','));
-  }
-  return lines.join('\n') + '\n';
 }

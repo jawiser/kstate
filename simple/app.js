@@ -1,10 +1,10 @@
-// app.js - all the browser-side code: settings, history, catalog lookups,
-// camera scanning and page updates. Pure logic (ISBN math, URL building,
-// XML parsing, CSV) is imported from helpers.js so it can be unit tested.
+// app.js - all the browser-side code: history, catalog lookups, camera
+// scanning and page updates. Pure logic (ISBN math, URL building, XML
+// parsing) is imported from helpers.js so it can be unit tested.
 //
 // The code is organised top to bottom:
-//   1. settings + history (localStorage)
-//   2. logging (in-memory, for the diagnostics export)
+//   1. configuration + history (localStorage)
+//   2. logging (console only)
 //   3. catalog lookup
 //   4. page updates
 //   5. camera scanning
@@ -15,62 +15,31 @@ import {
   is_valid_isbn,
   is_valid_isbn13,
   build_sru_url,
-  parse_sru_response,
-  history_to_csv
+  parse_sru_response
 } from './helpers.js';
 
 // ---------------------------------------------------------------------------
-// 1. Settings and history (saved in localStorage)
+// 1. Configuration and history
 // ---------------------------------------------------------------------------
 
-const DEFAULT_SETTINGS = {
+// Connection settings are fixed; edit here for a different institution.
+const SETTINGS = {
   sru_base: 'https://k-state.alma.exlibrisgroup.com/view/sru/01KSU_INST',
   proxy_base: '',
   primo_vid: '01KSU_INST:NewUI',
   primo_base: 'https://k-state.primo.exlibrisgroup.com/discovery/search'
 };
 
-const SETTINGS_KEY = 'gift-triage.settings.simple.v1';
 const HISTORY_KEY = 'gift-triage.history.simple.v1';
 const MAX_HISTORY = 500;
 
-// Read JSON from localStorage, falling back if missing or corrupt.
-function read_json(key, fallback){
-  try{
-    const raw = localStorage.getItem(key);
-    if(!raw) return fallback;
-    return JSON.parse(raw);
-  }catch(err){
-    return fallback;
-  }
-}
-
-function load_settings(){
-  const saved = read_json(SETTINGS_KEY, {});
-  // Merge over the defaults so missing fields get filled in.
-  return Object.assign({}, DEFAULT_SETTINGS, saved);
-}
-
-// Read the settings form, save it, and remember it in the global.
-function save_settings_from_form(){
-  settings = {
-    sru_base: el('sruBase').value.trim() || DEFAULT_SETTINGS.sru_base,
-    proxy_base: el('proxyBase').value.trim(),
-    primo_vid: el('primoVid').value.trim() || DEFAULT_SETTINGS.primo_vid,
-    primo_base: DEFAULT_SETTINGS.primo_base
-  };
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-}
-
-function fill_settings_form(){
-  el('sruBase').value = settings.sru_base;
-  el('proxyBase').value = settings.proxy_base;
-  el('primoVid').value = settings.primo_vid;
-}
-
 function load_history(){
-  const saved = read_json(HISTORY_KEY, []);
-  return Array.isArray(saved) ? saved : [];
+  try{
+    const saved = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    return Array.isArray(saved) ? saved : [];
+  }catch(err){
+    return [];  // missing or corrupt - start fresh
+  }
 }
 
 function save_history(){
@@ -81,19 +50,14 @@ function save_history(){
 // Global state
 // ---------------------------------------------------------------------------
 
-let settings = load_settings();
 let history = load_history();
 let current_isbn = '';   // the ISBN shown in the verdict, for "Open in Search It"
-let logs = [];           // recent events, for the diagnostics export
 
 // ---------------------------------------------------------------------------
 // 2. Logging
 // ---------------------------------------------------------------------------
 
-// Remember an event for the diagnostics export and echo it to the console.
 function log_event(level, event, details){
-  logs.push({ at: new Date().toISOString(), level: level, event: event, details: details || {} });
-  if(logs.length > 300) logs.shift();
   console.log('[gift-triage]', level, event, details || '');
 }
 
@@ -105,7 +69,7 @@ function log_event(level, event, details){
 // "Open in Search It" button as the manual fallback.
 const ERROR_MESSAGES = {
   timeout: 'The Alma lookup timed out. Tap "Open in Search It" for an instant answer, or try scanning again.',
-  network_or_cors: 'Could not reach Alma directly from this browser, often because of a cross-origin block. Tap "Open in Search It" for an instant answer, or add a proxy prefix in Connection settings.',
+  network_or_cors: 'Could not reach Alma directly from this browser, often because of a cross-origin block. Tap "Open in Search It" for an instant answer.',
   malformed_xml: 'Alma returned a response this tool could not read. Tap "Open in Search It" to verify manually.',
   sru_diagnostic: 'Alma rejected the catalog query. Tap "Open in Search It" to verify manually.'
 };
@@ -135,7 +99,7 @@ async function check_catalog(raw_isbn){
     };
   }
 
-  const url = build_sru_url(settings, isbn);
+  const url = build_sru_url(SETTINGS, isbn);
   let error_category = '';
   let error_message = '';
 
@@ -198,7 +162,6 @@ async function check_catalog(raw_isbn){
 
 // Run a lookup and update the page and history with the result.
 async function do_lookup(raw_isbn, source){
-  save_settings_from_form();  // in case the user edited settings and scanned right away
   current_isbn = clean_isbn(raw_isbn);
   hide_verdict();
   el('spinner').classList.add('show');
@@ -303,24 +266,6 @@ function render_history(){
   }
 }
 
-// Trigger a download of a text file (CSV or JSON).
-function download_file(filename, text, mime_type){
-  const blob = new Blob([text], { type: mime_type });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-function timestamp_name(prefix, ext){
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-  return prefix + '-' + stamp + '.' + ext;
-}
-
 // Show a message in the live readout line under the camera.
 // hold_ms keeps the message up; the "looking..." heartbeat respects it.
 let readout_hold_until = 0;
@@ -366,7 +311,8 @@ function camera_running(){
 function beep(freq, ms, volume){
   try{
     if(!audio_ctx){
-      const AudioCtor = window.AudioContext || window.webkitAudioContext;
+      // window['webkitAudioContext'] is the old Safari name for AudioContext.
+      const AudioCtor = window.AudioContext || window['webkitAudioContext'];
       if(AudioCtor) audio_ctx = new AudioCtor();
     }
     if(!audio_ctx) return;
@@ -590,7 +536,6 @@ function stop_camera(){
 // 6. Event wiring
 // ---------------------------------------------------------------------------
 
-fill_settings_form();
 render_history();
 
 el('toggleCam').addEventListener('click', () => {
@@ -608,9 +553,9 @@ el('manualIsbn').addEventListener('keydown', event => {
 
 el('openPrimo').addEventListener('click', () => {
   if(!current_isbn) return;
-  const url = settings.primo_base +
+  const url = SETTINGS.primo_base +
     '?query=any,contains,' + encodeURIComponent(current_isbn) +
-    '&vid=' + encodeURIComponent(settings.primo_vid);
+    '&vid=' + encodeURIComponent(SETTINGS.primo_vid);
   window.open(url, '_blank', 'noopener');
 });
 
@@ -619,48 +564,10 @@ el('scanNext').addEventListener('click', () => {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 
-el('sruBase').addEventListener('change', save_settings_from_form);
-el('proxyBase').addEventListener('change', save_settings_from_form);
-el('primoVid').addEventListener('change', save_settings_from_form);
-
-el('resetSettings').addEventListener('click', () => {
-  localStorage.removeItem(SETTINGS_KEY);
-  settings = load_settings();
-  fill_settings_form();
-  log_event('info', 'settings_reset');
-});
-
 el('clearHistory').addEventListener('click', () => {
   if(!window.confirm('Clear saved scan history from this browser?')) return;
   history = [];
   localStorage.removeItem(HISTORY_KEY);
   render_history();
   log_event('info', 'history_cleared');
-});
-
-el('exportCsv').addEventListener('click', () => {
-  download_file(timestamp_name('gift-triage-history', 'csv'), history_to_csv(history), 'text/csv');
-  log_event('info', 'history_exported', { count: history.length });
-});
-
-el('exportDiagnostics').addEventListener('click', () => {
-  // The proxy URL might contain credentials, so only report whether one is set.
-  const report = {
-    exported_at: new Date().toISOString(),
-    settings: {
-      sru_base: settings.sru_base,
-      proxy_configured: Boolean(settings.proxy_base),
-      primo_vid: settings.primo_vid
-    },
-    capabilities: {
-      user_agent: navigator.userAgent,
-      media_devices: Boolean(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
-      barcode_detector: 'BarcodeDetector' in window,
-      quagga_loaded: Boolean(window.Quagga)
-    },
-    history_count: history.length,
-    logs: logs
-  };
-  download_file(timestamp_name('gift-triage-diagnostics', 'json'), JSON.stringify(report, null, 2), 'application/json');
-  log_event('info', 'diagnostics_exported');
 });

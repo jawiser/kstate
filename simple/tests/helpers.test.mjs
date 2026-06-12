@@ -8,8 +8,7 @@ import {
   isbn13_to_10,
   isbn_lookup_forms,
   build_sru_url,
-  parse_sru_response,
-  history_to_csv
+  parse_sru_response
 } from '../helpers.js';
 
 test('cleans ISBN input', () => {
@@ -83,19 +82,6 @@ test('reports SRU diagnostics and bad documents as errors', () => {
 
   const empty = parse_sru_response(fake_doc([]));
   assert.equal(empty.error, 'malformed_xml');
-});
-
-test('exports history as CSV', () => {
-  const csv = history_to_csv([{
-    at: '2026-06-10T12:00:00.000Z',
-    isbn: '9780306406157',
-    verdict: 'held',
-    title: 'Comma, Title',
-    source: 'manual',
-    error_category: ''
-  }]);
-  assert.match(csv, /^timestamp,isbn,verdict,title,source,error_category/);
-  assert.match(csv, /"Comma, Title"/);
 });
 
 // --- tiny fake XML document, just enough for parse_sru_response ------------
