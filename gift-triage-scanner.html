@@ -6,168 +6,26 @@
 <title>Gift Triage Scanner · K-State Libraries</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;700;900&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./styles.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
-<style>
-  :root{
-    --purple:#512888;
-    --purple-dark:#3b1d66;
-    --ink:#1f1a26;
-    --paper:#ffffff;
-    --mist:#f3f0f7;
-    --line:#ddd6e8;
-    --held:#1b6e3c;
-    --held-bg:#e8f4ec;
-    --new:#9a5b00;
-    --new-bg:#fdf3e3;
-    --warn:#6b6377;
-    --warn-bg:#f0eef4;
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-    background:var(--mist);color:var(--ink);
-    min-height:100vh;
-  }
-  header{
-    background:var(--purple);color:#fff;
-    padding:14px 18px 12px;
-  }
-  header h1{
-    font-family:'Bitter',serif;font-weight:900;font-size:20px;letter-spacing:.2px;
-  }
-  header p{
-    font-family:'IBM Plex Mono',monospace;font-size:11px;opacity:.85;margin-top:2px;letter-spacing:.4px;
-  }
-  main{max-width:560px;margin:0 auto;padding:14px 14px 60px}
-
-  .panel{
-    background:var(--paper);border:1px solid var(--line);border-radius:10px;
-    padding:14px;margin-bottom:14px;
-  }
-  .panel h2{
-    font-family:'Bitter',serif;font-size:14px;font-weight:700;margin-bottom:10px;
-    color:var(--purple-dark);
-  }
-
-  /* Scanner */
-  #reader{
-    width:100%;border-radius:8px;overflow:hidden;background:#14101c;
-    min-height:40px;position:relative;
-  }
-  #reader video{border-radius:8px;display:block;width:100%}
-  #reader canvas.drawingBuffer{
-    position:absolute;top:0;left:0;width:100% !important;height:100% !important;
-    pointer-events:none;
-  }
-  .scanRow{display:flex;gap:8px;margin-top:10px}
-  button{
-    font-family:inherit;font-size:15px;font-weight:600;
-    border:none;border-radius:8px;padding:12px 14px;cursor:pointer;
-  }
-  button:focus-visible{outline:3px solid var(--purple);outline-offset:2px}
-  .btnPrimary{background:var(--purple);color:#fff;flex:1}
-  .btnPrimary:active{background:var(--purple-dark)}
-  .btnGhost{background:var(--mist);color:var(--purple-dark);border:1px solid var(--line)}
-  .manualRow{display:flex;gap:8px;margin-top:10px}
-  input[type=text]{
-    flex:1;font-family:'IBM Plex Mono',monospace;font-size:16px;
-    padding:11px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;
-  }
-  input[type=text]:focus-visible{outline:3px solid var(--purple);outline-offset:1px}
-  .hint{font-size:12px;color:var(--warn);margin-top:8px;line-height:1.45}
-
-  /* Verdict card — styled like an oversized spine label */
-  .verdict{
-    display:none;position:relative;background:var(--paper);
-    border:1px solid var(--line);border-left:14px solid var(--purple);
-    border-radius:10px;padding:16px 16px 16px 18px;margin-bottom:14px;
-  }
-  .verdict.show{display:block}
-  .verdict .status{
-    font-family:'Bitter',serif;font-weight:900;font-size:28px;line-height:1.05;
-  }
-  .verdict.held{border-left-color:var(--held);background:var(--held-bg)}
-  .verdict.held .status{color:var(--held)}
-  .verdict.notheld{border-left-color:var(--new);background:var(--new-bg)}
-  .verdict.notheld .status{color:var(--new)}
-  .verdict.unknown{border-left-color:var(--warn);background:var(--warn-bg)}
-  .verdict.unknown .status{color:var(--warn)}
-  .verdict .isbnLine{
-    font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--warn);
-    margin-top:4px;letter-spacing:.5px;
-  }
-  .verdict .title{
-    font-family:'Bitter',serif;font-weight:700;font-size:16px;margin-top:10px;line-height:1.35;
-  }
-  .verdict .meta{font-size:13px;color:var(--ink);margin-top:6px;line-height:1.5}
-  .holdings{margin-top:8px}
-  .holdings li{
-    list-style:none;font-size:13px;padding:6px 0;border-top:1px dashed var(--line);
-  }
-  .holdings .avail{font-weight:600;color:var(--held)}
-  .holdings .unavail{font-weight:600;color:var(--new)}
-  .verdict .actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
-  .spin{
-    display:none;font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--purple-dark);
-    padding:10px 0;
-  }
-  .spin.show{display:block}
-  @keyframes pulse{0%,100%{opacity:.45}50%{opacity:1}}
-  .spin span{animation:pulse 1.1s infinite}
-  @media (prefers-reduced-motion: reduce){.spin span{animation:none}}
-
-  /* Session tally */
-  .tally{display:flex;gap:10px;margin-bottom:10px}
-  .tally div{
-    flex:1;text-align:center;border:1px solid var(--line);border-radius:8px;
-    padding:8px 4px;background:var(--paper);
-  }
-  .tally .num{font-family:'Bitter',serif;font-weight:900;font-size:22px}
-  .tally .lbl{font-size:11px;color:var(--warn);text-transform:uppercase;letter-spacing:.6px}
-  .tally .held .num{color:var(--held)}
-  .tally .notheld .num{color:var(--new)}
-  #history li{
-    list-style:none;display:flex;justify-content:space-between;gap:8px;
-    padding:8px 2px;border-top:1px solid var(--line);font-size:13px;align-items:baseline;
-  }
-  #history .tag{
-    font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;white-space:nowrap;
-  }
-  #history .tag.held{color:var(--held)}
-  #history .tag.notheld{color:var(--new)}
-  #history .tag.unknown{color:var(--warn)}
-  #history .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-
-  /* Settings */
-  details summary{
-    cursor:pointer;font-family:'Bitter',serif;font-weight:700;font-size:14px;
-    color:var(--purple-dark);
-  }
-  details .field{margin-top:10px}
-  details label{font-size:12px;font-weight:600;display:block;margin-bottom:4px}
-  details input{width:100%}
-  footer{
-    text-align:center;font-size:11px;color:var(--warn);padding:10px;
-    font-family:'IBM Plex Mono',monospace;
-  }
-</style>
+<script type="module" src="./src/app.js"></script>
 </head>
 <body>
 
 <header>
   <h1>Gift Triage Scanner</h1>
-  <p>K-STATE LIBRARIES · CHECKS SEARCH IT / ALMA BY ISBN</p>
+  <p>K-STATE LIBRARIES &middot; CHECKS SEARCH IT / ALMA BY ISBN</p>
 </header>
 
 <main>
-
-  <div class="spin" id="spinner"><span>Checking the catalog…</span></div>
+  <div class="spin" id="spinner"><span>Checking the catalog...</span></div>
 
   <div class="verdict" id="verdict" role="status" aria-live="polite">
     <div class="status" id="vStatus"></div>
     <div class="isbnLine" id="vIsbn"></div>
     <div class="title" id="vTitle"></div>
     <div class="meta" id="vMeta"></div>
+    <div class="errorDetails" id="vError"></div>
     <ul class="holdings" id="vHoldings"></ul>
     <div class="actions">
       <button class="btnGhost" id="openPrimo">Open in Search It</button>
@@ -178,24 +36,29 @@
   <div class="panel">
     <h2>Scan the ISBN barcode (back cover)</h2>
     <div id="reader"></div>
-    <div id="liveRead" style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:var(--purple-dark);min-height:1.3em;padding:6px 2px 0;" aria-live="polite"></div>
+    <div id="liveRead" class="liveRead" aria-live="polite"></div>
     <div class="scanRow">
       <button class="btnPrimary" id="toggleCam">Start camera</button>
     </div>
     <div class="manualRow">
-      <input type="text" id="manualIsbn" inputmode="numeric" placeholder="…or type the ISBN" aria-label="Type an ISBN">
+      <input type="text" id="manualIsbn" inputmode="numeric" placeholder="...or type the ISBN" aria-label="Type an ISBN">
       <button class="btnGhost" id="manualGo">Check</button>
     </div>
-    <p class="hint" id="scanNote" style="opacity:0;transition:opacity .4s;min-height:1em;color:#9a5b00;font-weight:600"></p>
-    <p class="hint">Aim at the barcode that starts with 978 or 979 (usually the larger one, printed above the ISBN number). The scanner now ignores the smaller UPC price barcode automatically. If the camera is blocked in this preview, type the ISBN or open this file in your phone's browser.</p>
+    <p class="hint scanNote" id="scanNote"></p>
+    <p class="hint">Aim at the barcode that starts with 978 or 979, usually the larger one printed above the ISBN number. The scanner ignores the smaller UPC price barcode automatically. If the camera is blocked, type the ISBN or open the hosted page in your phone's browser.</p>
   </div>
 
   <div class="panel">
-    <h2>This session</h2>
+    <h2>Saved scans</h2>
     <div class="tally">
       <div class="held"><div class="num" id="tHeld">0</div><div class="lbl">Already held</div></div>
       <div class="notheld"><div class="num" id="tNew">0</div><div class="lbl">Not in catalog</div></div>
       <div><div class="num" id="tUnk">0</div><div class="lbl">Check manually</div></div>
+    </div>
+    <div class="historyActions">
+      <button class="btnGhost" id="exportCsv">Export CSV</button>
+      <button class="btnGhost" id="exportDiagnostics">Export diagnostics</button>
+      <button class="btnDanger" id="clearHistory">Clear history</button>
     </div>
     <ul id="history"></ul>
   </div>
@@ -205,7 +68,7 @@
       <summary>Connection settings</summary>
       <div class="field">
         <label for="sruBase">Alma SRU endpoint</label>
-        <input type="text" id="sruBase" value="https://k-state.alma.exlibrisgroup.com/view/sru/01KSU_INST">
+        <input type="text" id="sruBase" value="">
       </div>
       <div class="field">
         <label for="proxyBase">Optional proxy prefix (if direct Alma calls are blocked by CORS)</label>
@@ -213,393 +76,17 @@
       </div>
       <div class="field">
         <label for="primoVid">Primo view (vid)</label>
-        <input type="text" id="primoVid" value="01KSU_INST:NewUI">
+        <input type="text" id="primoVid" value="">
       </div>
-      <p class="hint">Settings apply for this session only. For a permanent deployment, Library IT can edit the defaults at the top of the script and host this file on any web server.</p>
+      <div class="settingsActions">
+        <button class="btnGhost" id="resetSettings">Reset defaults</button>
+      </div>
+      <p class="hint">Settings are saved in this browser. The scan history and diagnostics exports are local files; no remote logging is used.</p>
     </details>
   </div>
 
-  <footer>PROTOTYPE · READ-ONLY · NO DATA LEAVES THE BROWSER</footer>
+  <footer>PROTOTYPE &middot; READ-ONLY &middot; SCAN DATA STAYS IN THIS BROWSER EXCEPT CATALOG SEARCHES</footer>
 </main>
 
-<script>
-/* ============ Config (session defaults; editable in Settings) ============ */
-const cfg = {
-  get sru(){ return document.getElementById('sruBase').value.trim(); },
-  get proxy(){ return document.getElementById('proxyBase').value.trim(); },
-  get vid(){ return document.getElementById('primoVid').value.trim(); },
-  primoBase: 'https://k-state.primo.exlibrisgroup.com/discovery/search'
-};
-
-/* ============ ISBN helpers ============ */
-function cleanIsbn(raw){
-  return (raw||'').replace(/[^0-9Xx]/g,'').toUpperCase();
-}
-function isbn13to10(i13){
-  if(!/^978\d{10}$/.test(i13)) return null;       // 979- ISBNs have no ISBN-10 form
-  const core = i13.slice(3,12);
-  let sum = 0;
-  for(let i=0;i<9;i++) sum += (10-i)*parseInt(core[i],10);
-  let chk = (11 - (sum % 11)) % 11;
-  return core + (chk === 10 ? 'X' : String(chk));
-}
-function validIsbn(s){
-  return /^97[89]\d{10}$/.test(s) || /^\d{9}[\dX]$/.test(s);
-}
-
-/* ============ UI references ============ */
-const $ = id => document.getElementById(id);
-const verdict = $('verdict'), spinner = $('spinner');
-let lastIsbn = '', lastTime = 0, currentIsbn = '';
-const tallies = { held:0, notheld:0, unknown:0 };
-
-/* ============ Lookup ============ */
-async function lookup(rawIsbn){
-  const isbn = cleanIsbn(rawIsbn);
-  if(!validIsbn(isbn)){
-    showVerdict('unknown','Not an ISBN', isbn, '', 'That barcode doesn\u2019t look like an ISBN. Many books also carry a second UPC barcode; try the one that starts with 978 or 979.', []);
-    return;
-  }
-  currentIsbn = isbn;
-  verdict.classList.remove('show');
-  spinner.classList.add('show');
-
-  const forms = [isbn];
-  const alt = isbn.length === 13 ? isbn13to10(isbn) : null;
-  if(alt) forms.push(alt);
-  const cql = forms.map(f => 'alma.isbn==' + f).join(' or ');
-  const sruUrl = cfg.sru + '?version=1.2&operation=searchRetrieve&recordSchema=marcxml&maximumRecords=5&query=' + encodeURIComponent(cql);
-  const url = cfg.proxy ? cfg.proxy + encodeURIComponent(sruUrl) : sruUrl;
-
-  try{
-    const ctrl = new AbortController();
-    const timer = setTimeout(()=>ctrl.abort(), 9000);
-    const res = await fetch(url, { signal: ctrl.signal });
-    clearTimeout(timer);
-    if(!res.ok) throw new Error('HTTP ' + res.status);
-    const xmlText = await res.text();
-    const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-    const numEl = doc.getElementsByTagNameNS('*','numberOfRecords')[0];
-    const n = numEl ? parseInt(numEl.textContent,10) : 0;
-
-    if(n > 0){
-      const { title, year, holdings } = parseFirstRecord(doc);
-      const meta = (year ? 'Published ' + year + '. ' : '') +
-        n + (n===1 ? ' catalog record matches' : ' catalog records match') + ' this ISBN.';
-      showVerdict('held','ALREADY HELD', isbn, title, meta, holdings);
-      bump('held', title || isbn);
-    }else{
-      showVerdict('notheld','NOT IN CATALOG', isbn, '',
-        'No record matches this ISBN. A different edition might still be held \u2014 tap below to double-check by title in Search It.', []);
-      bump('notheld', isbn);
-    }
-  }catch(err){
-    spinner.classList.remove('show');
-    showVerdict('unknown','CHECK MANUALLY', isbn, '',
-      'Couldn\u2019t reach Alma directly from this browser (usually a cross-origin block, not a catalog problem). Tap \u201cOpen in Search It\u201d for an instant answer, or add a proxy prefix in Connection settings.', []);
-    bump('unknown', isbn);
-    return;
-  }
-  spinner.classList.remove('show');
-}
-
-function parseFirstRecord(doc){
-  let title = '', year = '';
-  const holdings = [];
-  const dfs = doc.getElementsByTagNameNS('*','datafield');
-  for(const df of dfs){
-    const tag = df.getAttribute('tag');
-    const sub = code => {
-      for(const sf of df.children){
-        if(sf.getAttribute && sf.getAttribute('code') === code) return sf.textContent.trim();
-      }
-      return '';
-    };
-    if(tag === '245' && !title){
-      title = (sub('a') + ' ' + sub('b')).replace(/[\/:;,]\s*$/,'').trim();
-    }
-    if((tag === '264' || tag === '260') && !year){
-      const m = (sub('c')||'').match(/\d{4}/); if(m) year = m[0];
-    }
-    if(tag === 'AVA'){
-      holdings.push({
-        lib: sub('q') || sub('b'),
-        loc: sub('c'),
-        avail: sub('e') || sub('t'),
-        count: sub('f')
-      });
-    }
-  }
-  return { title, year, holdings };
-}
-
-function showVerdict(kind, status, isbn, title, meta, holdings){
-  spinner.classList.remove('show');
-  verdict.className = 'verdict show ' + kind;
-  $('vStatus').textContent = status;
-  $('vIsbn').textContent = 'ISBN ' + isbn;
-  $('vTitle').textContent = title || '';
-  $('vMeta').textContent = meta || '';
-  const ul = $('vHoldings'); ul.innerHTML = '';
-  for(const h of holdings){
-    const li = document.createElement('li');
-    const availTxt = (h.avail||'').toLowerCase();
-    const cls = availTxt.includes('available') ? 'avail' : 'unavail';
-    li.innerHTML = '<strong>' + esc(h.lib) + '</strong>' +
-      (h.loc ? ' \u00b7 ' + esc(h.loc) : '') +
-      (h.count ? ' \u00b7 ' + esc(h.count) + ' item(s)' : '') +
-      (h.avail ? ' \u00b7 <span class="' + cls + '">' + esc(h.avail) + '</span>' : '');
-    ul.appendChild(li);
-  }
-  verdict.scrollIntoView({behavior:'smooth', block:'start'});
-}
-
-function esc(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
-
-function bump(kind, label){
-  tallies[kind]++;
-  $('tHeld').textContent = tallies.held;
-  $('tNew').textContent = tallies.notheld;
-  $('tUnk').textContent = tallies.unknown;
-  const li = document.createElement('li');
-  const tagTxt = kind==='held' ? 'HELD' : kind==='notheld' ? 'NEW' : '??';
-  li.innerHTML = '<span class="t">' + esc(label) + '</span><span class="tag ' + kind + '">' + tagTxt + '</span>';
-  $('history').prepend(li);
-}
-
-/* ============ Primo deep link ============ */
-$('openPrimo').addEventListener('click', () => {
-  if(!currentIsbn) return;
-  const u = cfg.primoBase + '?query=any,contains,' + encodeURIComponent(currentIsbn) +
-            '&vid=' + encodeURIComponent(cfg.vid);
-  window.open(u, '_blank', 'noopener');
-});
-$('scanNext').addEventListener('click', () => {
-  verdict.classList.remove('show');
-  window.scrollTo({top:0, behavior:'smooth'});
-});
-
-/* ============ Manual entry ============ */
-$('manualGo').addEventListener('click', () => lookup($('manualIsbn').value));
-$('manualIsbn').addEventListener('keydown', e => { if(e.key === 'Enter') lookup(e.target.value); });
-
-/* ============ Sound ============ */
-let audioCtx = null;
-function ensureAudio(){
-  try{
-    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if(audioCtx.state === 'suspended') audioCtx.resume();
-  }catch(e){ audioCtx = null; }
-}
-function beep(freq, ms, vol){
-  if(!audioCtx) return;
-  try{
-    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.type = 'square'; o.frequency.value = freq;
-    g.gain.value = vol || 0.2;
-    o.connect(g); g.connect(audioCtx.destination);
-    o.start();
-    setTimeout(() => { try{ o.stop(); o.disconnect(); g.disconnect(); }catch(e){} }, ms);
-  }catch(e){}
-}
-
-/* ============ Live readout ============ */
-const liveRead = $('liveRead');
-let heartbeatLast = 0, dotCount = 0, readoutHold = 0;
-function setReadout(msg, holdMs){
-  liveRead.textContent = msg;
-  readoutHold = Date.now() + (holdMs || 0);
-}
-function heartbeat(){
-  const now = Date.now();
-  if(now < readoutHold || now - heartbeatLast < 600) return;  // don't stomp messages
-  heartbeatLast = now;
-  dotCount = (dotCount + 1) % 4;
-  liveRead.textContent = 'Looking for a barcode' + '.'.repeat(dotCount + 1);
-}
-
-/* ============ Camera ============ */
-let stream = null, video = null, scanning = false;
-let detector = null, usingQuagga = false, rafId = null, lastDetectAt = 0;
-let candidate = '', candidateHits = 0;
-const toggleBtn = $('toggleCam');
-const readerEl = document.getElementById('reader');
-
-toggleBtn.addEventListener('click', async () => {
-  if(scanning){ await stopCam(); return; }
-  ensureAudio();  // must be created inside a user tap for iOS to allow sound
-  toggleBtn.textContent = 'Starting\u2026';
-  try{
-    const native = await tryNativeDetector();
-    if(!native) await startQuagga();
-    scanning = true;
-    toggleBtn.textContent = 'Stop camera';
-    setReadout('Camera on (' + (native ? 'native' : 'Quagga') + ' engine). Hold the barcode 5\u201310 inches away.', 3000);
-  }catch(err){
-    await stopCam();
-    showVerdict('unknown','CAMERA UNAVAILABLE','','',
-      'This environment blocked camera access (common in embedded previews). Type the ISBN below instead, or open this file directly in Safari or Chrome on your phone.',[]);
-  }
-});
-
-/* Path 1: the browser's built-in BarcodeDetector (Apple Vision / Google ML).
-   Far more accurate than any JavaScript decoder when present. */
-async function tryNativeDetector(){
-  if(!('BarcodeDetector' in window)) return false;
-  let fmts = [];
-  try{ fmts = await window.BarcodeDetector.getSupportedFormats(); }catch(e){ return false; }
-  if(!fmts || !fmts.includes('ean_13')) return false;
-  detector = new window.BarcodeDetector({ formats: ['ean_13'] });
-  stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
-    audio: false
-  });
-  video = document.createElement('video');
-  video.setAttribute('playsinline', 'true');
-  video.muted = true;
-  video.style.width = '100%';
-  video.style.borderRadius = '8px';
-  readerEl.innerHTML = '';
-  readerEl.appendChild(video);
-  video.srcObject = stream;
-  await video.play();
-  tuneTrack(stream.getVideoTracks()[0]);
-  detectLoop();
-  return true;
-}
-
-function detectLoop(){
-  if(!detector || !video) return;
-  rafId = requestAnimationFrame(detectLoop);
-  const now = Date.now();
-  if(now - lastDetectAt < 90) return;   // ~11 checks per second
-  lastDetectAt = now;
-  detector.detect(video).then(codes => {
-    if(codes && codes.length) acceptRead(codes[0].rawValue, true);
-    else heartbeat();
-  }).catch(() => heartbeat());
-}
-
-/* Path 2: Quagga, a JavaScript decoder built specifically for striped
-   1D retail barcodes (EAN/UPC). Much stronger on these than QR-first
-   libraries. Runs when the browser has no native detector. */
-async function startQuagga(){
-  if(typeof Quagga === 'undefined') throw new Error('decoder unavailable');
-  usingQuagga = true;
-  readerEl.innerHTML = '';
-  await new Promise((resolve, reject) => {
-    Quagga.init({
-      inputStream: {
-        name: 'Live',
-        type: 'LiveStream',
-        target: readerEl,
-        constraints: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
-      },
-      locator: { patchSize: 'medium', halfSample: true },
-      numOfWorkers: 0,
-      frequency: 10,
-      decoder: { readers: ['ean_reader'] },
-      locate: true
-    }, err => err ? reject(err) : resolve());
-  });
-  Quagga.start();
-  const v = readerEl.querySelector('video');
-  if(v){
-    v.setAttribute('playsinline', 'true');
-    v.muted = true;
-    v.style.width = '100%';
-    v.style.borderRadius = '8px';
-    const t = v.srcObject && v.srcObject.getVideoTracks ? v.srcObject.getVideoTracks()[0] : null;
-    if(t) tuneTrack(t);
-  }
-  Quagga.onProcessed(() => heartbeat());
-  Quagga.onDetected(res => {
-    const code = res && res.codeResult ? res.codeResult.code : '';
-    if(code) acceptRead(code, false);
-  });
-}
-
-/* Quagga occasionally misreads a digit; the native detector almost never
-   does. So Quagga reads must repeat twice in a row before we accept. */
-function acceptRead(raw, trusted){
-  const digits = cleanIsbn(String(raw));
-  if(!trusted){
-    if(digits === candidate){ candidateHits++; }
-    else { candidate = digits; candidateHits = 1; }
-    if(candidateHits < 2){
-      setReadout('Reading\u2026 ' + digits, 600);
-      return;
-    }
-    candidate = ''; candidateHits = 0;
-  }
-  handleIsbnRead(digits);
-}
-
-/* Ask the camera for continuous focus and a touch of zoom, where supported.
-   Zoom lets the phone sit farther from the book while the barcode still
-   fills the frame, which avoids the close-focus blur problem. */
-async function tuneTrack(track){
-  try{
-    if(!track || !track.getCapabilities) return;
-    const caps = track.getCapabilities();
-    const adv = {};
-    let any = false;
-    if(caps.focusMode && Array.from(caps.focusMode).includes('continuous')){
-      adv.focusMode = 'continuous'; any = true;
-    }
-    if(caps.zoom && caps.zoom.max){
-      adv.zoom = Math.min(2, caps.zoom.max); any = true;
-    }
-    if(any) await track.applyConstraints({ advanced: [adv] });
-  }catch(e){ /* best effort; not all browsers expose these */ }
-}
-
-async function stopCam(){
-  if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
-  detector = null;
-  if(usingQuagga){
-    try{ Quagga.stop(); }catch(e){}
-    try{ Quagga.offDetected(); Quagga.offProcessed(); }catch(e){}
-    usingQuagga = false;
-  }
-  if(stream){
-    try{ stream.getTracks().forEach(t => t.stop()); }catch(e){}
-    stream = null;
-  }
-  readerEl.innerHTML = '';
-  video = null;
-  scanning = false;
-  candidate = ''; candidateHits = 0;
-  toggleBtn.textContent = 'Start camera';
-  setReadout('', 0);
-}
-
-function handleIsbnRead(isbn){
-  // Only act on real Bookland ISBNs (978/979). Books carry a second UPC
-  // price barcode next to the ISBN; skip anything that isn't the ISBN.
-  if(!/^97[89]\d{10}$/.test(isbn)){
-    beep(220, 90, 0.15);                       // low blip: read something, wrong barcode
-    setReadout('Read ' + isbn + ' \u2014 that\u2019s the price barcode. Slide to the 978/979 one.', 2200);
-    noteSkip();
-    return;
-  }
-  const now = Date.now();
-  if(isbn === lastIsbn && now - lastTime < 4000) return;  // debounce repeats
-  lastIsbn = isbn; lastTime = now;
-  beep(1175, 140, 0.25);                       // high beep: ISBN captured
-  if(navigator.vibrate) navigator.vibrate(60);
-  setReadout('Read ISBN ' + isbn + ' \u2014 checking the catalog\u2026', 3000);
-  lookup(isbn);
-}
-
-let skipTimer = null;
-function noteSkip(){
-  const el = document.getElementById('scanNote');
-  el.textContent = 'Skipped a price barcode \u2014 aim at the one starting 978 or 979';
-  el.style.opacity = '1';
-  clearTimeout(skipTimer);
-  skipTimer = setTimeout(()=>{ el.style.opacity = '0'; }, 2500);
-}
-</script>
 </body>
 </html>
