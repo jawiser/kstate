@@ -90,6 +90,8 @@
   .verdict.held .status{color:var(--held)}
   .verdict.notheld{border-left-color:var(--new);background:var(--new-bg)}
   .verdict.notheld .status{color:var(--new)}
+  .verdict.edition{border-left-color:#0f766e;background:#e7f3f1}
+  .verdict.edition .status{color:#0f766e}
   .verdict.unknown{border-left-color:var(--warn);background:var(--warn-bg)}
   .verdict.unknown .status{color:var(--warn)}
   .verdict .isbnLine{
@@ -313,10 +315,7 @@ async function lookup(rawIsbn){
     showVerdict('held','ALREADY HELD', isbn, title, meta, holdings);
     bump('held', title || isbn);
   }else if(n === 0){
-    showVerdict('notheld','NOT THIS ISBN', isbn, '',
-      'No record matches this exact ISBN. We may still hold another edition, printing, or the ebook under a different ISBN.', []);
-    bump('notheld', isbn);
-    titleAssist(isbn);   // look up what this book is, to enable a title check
+    await resolveNoExactMatch(isbn);
   }else{
     showVerdict('unknown','CHECK MANUALLY', isbn, '',
       'Alma answered, but not in the expected format, so this is a query problem rather than a catalog answer. Tap \u201cRaw Alma reply\u201d below and send me what it says.', []);
@@ -324,13 +323,51 @@ async function lookup(rawIsbn){
   }
 }
 
-/* When the exact ISBN finds nothing, ask Google Books what the book is,
-   then offer a one-tap title search in Primo. Catches the very common
-   case where the library holds the ebook or a different edition. */
+/* ============ Other-editions pipeline ============
+   The exact ISBN found nothing. Identify the work (Google Books), then
+   search Alma by title + author. Three honest outcomes:
+   - OTHER VERSION HELD: same work, different ISBN (edition / printing / ebook)
+   - NOT IN CATALOG: no exact ISBN and no title/author match either
+   - NOT THIS ISBN: couldn't complete the deeper check; human should confirm */
 let assistTitle = '';
-async function titleAssist(isbn){
-  assistTitle = '';
-  $('titleSearch').style.display = 'none';
+
+async function resolveNoExactMatch(isbn){
+  showVerdict('notheld','NOT THIS ISBN', isbn, '',
+    'No record matches this exact ISBN. Checking for other versions\u2026', []);
+
+  const info = await fetchBookInfo(isbn);
+  if(!info || !info.title){
+    $('vMeta').textContent = 'No record matches this exact ISBN, and the title couldn\u2019t be identified automatically to check for other editions. Try a title search in Search It.';
+    bump('notheld', isbn);
+    return;
+  }
+  assistTitle = info.title;
+  const who = info.authors && info.authors.length ? ' by ' + info.authors.join(', ') : '';
+
+  const matches = await editionSearch(info);   // array, or null if the check failed
+
+  if(matches && matches.length){
+    showVerdict('edition','OTHER VERSION HELD', isbn, info.title + who,
+      'This exact ISBN isn\u2019t in the catalog, but ' + matches.length +
+      (matches.length === 1 ? ' record matches' : ' records match') +
+      ' the title and author \u2014 likely another edition, printing, or the ebook. Closest matches:',
+      matches.slice(0,3).map(m => ({ lib: m.title, loc: m.year, avail: '', count: '' })));
+    showTitleBtn();
+    bump('held', info.title + ' (other version)');
+  }else if(matches){
+    showVerdict('notheld','NOT IN CATALOG', isbn, info.title + who,
+      'No exact ISBN match, and no other editions matched by title and author either. This one looks genuinely new to the collection.', []);
+    showTitleBtn();
+    bump('notheld', info.title || isbn);
+  }else{
+    showVerdict('notheld','NOT THIS ISBN', isbn, info.title + who,
+      'No exact ISBN match, and the other-editions check didn\u2019t complete. Confirm by title in Search It.', []);
+    showTitleBtn();
+    bump('notheld', info.title || isbn);
+  }
+}
+
+async function fetchBookInfo(isbn){
   try{
     const ctrl = new AbortController();
     const timer = setTimeout(()=>ctrl.abort(), 6000);
@@ -338,15 +375,82 @@ async function titleAssist(isbn){
     clearTimeout(timer);
     const j = await r.json();
     const vi = j && j.items && j.items[0] && j.items[0].volumeInfo;
-    if(vi && vi.title){
-      assistTitle = vi.title;
-      const who = vi.authors && vi.authors.length ? ' by ' + vi.authors.join(', ') : '';
-      $('vMeta').textContent += ' This appears to be \u201c' + vi.title + '\u201d' + who + '.';
-      const btn = $('titleSearch');
-      btn.textContent = 'Check by title in Search It';
-      btn.style.display = 'inline-block';
-    }
+    if(vi && vi.title) return { title: vi.title, authors: vi.authors || [] };
   }catch(e){ /* best effort */ }
+  return null;
+}
+
+function normTitle(t){
+  let s = (t || '').split(':')[0];                 // main title only
+  s = s.replace(/["\u201c\u201d&]/g, ' ')
+       .replace(/[^A-Za-z0-9 ]/g, ' ')
+       .replace(/\s+/g, ' ').trim().toLowerCase();
+  const words = s.split(' ').filter(w => w.length);
+  return words.slice(0, 7).join(' ');
+}
+
+function firstAuthorSurname(authors){
+  if(!authors || !authors.length) return '';
+  const parts = authors[0].replace(/[^A-Za-z\- ]/g, ' ').trim().split(/\s+/);
+  const last = parts[parts.length - 1] || '';
+  return last.length >= 2 ? last : '';
+}
+
+async function editionSearch(info){
+  try{
+    const t = normTitle(info.title);
+    if(!t) return [];
+    let cql = 'alma.title all "' + t + '"';
+    const surname = firstAuthorSurname(info.authors);
+    if(surname) cql += ' and alma.creator all "' + surname + '"';
+    const sruUrl = cfg.sru + '?version=1.2&operation=searchRetrieve&recordSchema=marcxml&maximumRecords=4&query=' + encodeURIComponent(cql);
+    lastQueryUrl = cfg.proxy ? cfg.proxy + encodeURIComponent(sruUrl) : sruUrl;
+    const ctrl = new AbortController();
+    const timer = setTimeout(()=>ctrl.abort(), 9000);
+    const res = await fetch(lastQueryUrl, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if(!res.ok) return null;
+    const doc = new DOMParser().parseFromString(await res.text(), 'application/xml');
+    const numEl = doc.getElementsByTagNameNS('*','numberOfRecords')[0];
+    if(!numEl) return null;
+    if(parseInt(numEl.textContent,10) === 0) return [];
+    return parseAllRecords(doc);
+  }catch(e){ return null; }
+}
+
+function showTitleBtn(){
+  if(!assistTitle) return;
+  const btn = $('titleSearch');
+  btn.textContent = 'Check by title in Search It';
+  btn.style.display = 'inline-block';
+}
+
+function parseAllRecords(doc){
+  const out = [];
+  const seen = new Set();
+  const datas = doc.getElementsByTagNameNS('*','recordData');
+  for(const rd of datas){
+    let title = '', year = '';
+    const dfs = rd.getElementsByTagNameNS('*','datafield');
+    for(const df of dfs){
+      const tag = df.getAttribute('tag');
+      const sub = code => {
+        for(const sf of df.children){
+          if(sf.getAttribute && sf.getAttribute('code') === code) return sf.textContent.trim();
+        }
+        return '';
+      };
+      if(tag === '245' && !title){
+        title = (sub('a') + ' ' + sub('b')).replace(/[\/:;,]\s*$/,'').trim();
+      }
+      if((tag === '264' || tag === '260') && !year){
+        const m = (sub('c')||'').match(/\d{4}/); if(m) year = m[0];
+      }
+    }
+    const key = title + '|' + year;
+    if(title && !seen.has(key)){ seen.add(key); out.push({ title, year }); }
+  }
+  return out;
 }
 
 function parseFirstRecord(doc){
