@@ -167,6 +167,22 @@
   .sheetLine button{padding:8px 10px;font-size:13px}
   #history .tag.saved{color:var(--purple)}
 
+  /* Donor mode: same app, catalog details hidden */
+  .donorOnly{display:none}
+  body.donor .donorOnly{display:block}
+  body.donor .staffOnly{display:none !important}
+  .verdict.found{border-left-color:var(--purple)}
+  .verdict.found .status{color:var(--purple-dark)}
+  .steps{padding-left:20px;font-size:14px;line-height:1.55}
+  .steps li{margin-top:6px}
+  .intro p{font-size:14px;line-height:1.55}
+  .intro p + .steps{margin-top:8px}
+  .linkOut{
+    width:100%;margin-top:8px;font-family:'IBM Plex Mono',monospace;font-size:12px;
+    padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--mist);
+    word-break:break-all;line-height:1.45;
+  }
+
   /* Settings */
   details summary{
     cursor:pointer;font-family:'Bitter',serif;font-weight:700;font-size:14px;
@@ -187,13 +203,25 @@
 <body>
 
 <header>
-  <h1>Gift Triage Scanner</h1>
-  <p>K-STATE LIBRARIES · CHECKS SEARCH IT / ALMA BY ISBN</p>
+  <h1 id="appTitle">Gift Triage Scanner</h1>
+  <p id="appSub">K-STATE LIBRARIES · CHECKS SEARCH IT / ALMA BY ISBN</p>
 </header>
 
 <main>
 
-  <div class="spin" id="spinner"><span>Checking the catalog…</span></div>
+  <div class="panel intro donorOnly">
+    <h2 id="donorHello">Your book list for K-State Libraries</h2>
+    <p>Thank you for offering your books. Scanning them here sends us a list so we can plan for your gift.</p>
+    <ol class="steps">
+      <li>Tap <strong>Start camera</strong> below and allow the camera.</li>
+      <li>Point it at the barcode on the back cover that starts with <strong>978</strong> or <strong>979</strong>.</li>
+      <li>Check the <strong>list price</strong>. It often fills in by itself; if not, type the price printed on the cover or jacket. Leave it blank if there isn't one.</li>
+      <li>Tap <strong>Save this book</strong>, then scan the next one.</li>
+    </ol>
+    <p class="hint">Each book is sent as soon as you save it, so there's nothing to submit at the end. You can stop and come back to this link anytime.</p>
+  </div>
+
+  <div class="spin" id="spinner"><span id="spinText">Checking the catalog…</span></div>
 
   <div class="verdict" id="verdict" role="status" aria-live="polite">
     <div class="status" id="vStatus"></div>
@@ -212,9 +240,9 @@
       <div class="saveMsg" id="saveMsg" aria-live="polite"></div>
     </div>
     <div class="actions">
-      <button class="btnGhost" id="openPrimo">Open in Search It</button>
-      <button class="btnGhost" id="titleSearch" style="display:none"></button>
-      <button class="btnGhost" id="rawReply" style="display:none">Raw Alma reply</button>
+      <button class="btnGhost staffOnly" id="openPrimo">Open in Search It</button>
+      <button class="btnGhost staffOnly" id="titleSearch" style="display:none"></button>
+      <button class="btnGhost staffOnly" id="rawReply" style="display:none">Raw Alma reply</button>
       <button class="btnGhost" id="scanNext">Scan next book</button>
     </div>
   </div>
@@ -231,17 +259,18 @@
       <button class="btnGhost" id="manualGo">Check</button>
     </div>
     <p class="hint" id="scanNote" style="opacity:0;transition:opacity .4s;min-height:1em;color:#9a5b00;font-weight:600"></p>
-    <p class="hint">Aim at the barcode that starts with 978 or 979 (usually the larger one, printed above the ISBN number). If the small 5-digit price barcode sits right beside it, keep both in the frame and the list price fills in by itself (iPhone engine). If the camera is blocked in this preview, type the ISBN or open this file in your phone's browser.</p>
+    <p class="hint donorOnly">If the camera won't start, type the 13-digit number printed under the barcode and tap Check. If the small 5-digit barcode beside it is in view too, the price fills in automatically.</p>
+    <p class="hint staffOnly">Aim at the barcode that starts with 978 or 979 (usually the larger one, printed above the ISBN number). If the small 5-digit price barcode sits right beside it, keep both in the frame and the list price fills in by itself (iPhone engine). If the camera is blocked in this preview, type the ISBN or open this file in your phone's browser.</p>
   </div>
 
   <div class="panel">
-    <h2>This session</h2>
-    <div class="tally">
+    <h2 id="sessionHead">This session</h2>
+    <div class="tally staffOnly">
       <div class="held"><div class="num" id="tHeld">0</div><div class="lbl">Already held</div></div>
       <div class="notheld"><div class="num" id="tNew">0</div><div class="lbl">Not in catalog</div></div>
       <div><div class="num" id="tUnk">0</div><div class="lbl">Check manually</div></div>
     </div>
-    <div class="field" style="margin-top:0">
+    <div class="field staffOnly" style="margin-top:0">
       <label for="batchIn">Gift batch / donor (added to every saved row)</label>
       <input type="text" id="batchIn" placeholder="e.g., Smith estate, Oct 2026" autocomplete="off">
     </div>
@@ -252,7 +281,22 @@
     <ul id="history"></ul>
   </div>
 
-  <div class="panel">
+  <div class="panel staffOnly">
+    <h2>Invite a donor to scan</h2>
+    <p class="hint" style="margin-top:0">Makes a link that opens a simplified version of this scanner for a donor. It saves to your sheet with their name as the batch, and doesn't show them whether we already hold a book.</p>
+    <div class="field">
+      <label for="donorNameIn">Donor's name</label>
+      <input type="text" id="donorNameIn" placeholder="e.g., Margaret Smith" autocomplete="off">
+    </div>
+    <div class="scanRow">
+      <button class="btnPrimary" id="makeLink">Create donor link</button>
+      <button class="btnGhost" id="copyLink" hidden>Copy link</button>
+    </div>
+    <div class="linkOut" id="donorLinkOut" hidden></div>
+    <p class="hint" id="donorLinkMsg"></p>
+  </div>
+
+  <div class="panel staffOnly">
     <details id="settingsBox">
       <summary>Connection settings</summary>
       <div class="field">
@@ -280,7 +324,8 @@
     </details>
   </div>
 
-  <footer>PROTOTYPE · ONLY BOOKS YOU SAVE ARE SENT, AND ONLY TO YOUR GOOGLE SHEET</footer>
+  <footer class="donorOnly">K-STATE LIBRARIES · YOUR LIST GOES ONLY TO THE LIBRARY</footer>
+  <footer class="staffOnly">PROTOTYPE · ONLY BOOKS YOU SAVE ARE SENT, AND ONLY TO YOUR GOOGLE SHEET</footer>
 </main>
 
 <script>
@@ -293,6 +338,28 @@ const cfg = {
   // Library IT: paste the Apps Script web app link here to preset it for everyone.
   sheetUrlDefault: ''
 };
+
+/* ============ Donor mode ============
+   A link like ?donor=Margaret%20Smith&sheet=<web app id> opens a simplified
+   scanner for a donor: their name is the batch, and catalog results are
+   still recorded in the sheet but never shown on screen. */
+const params = new URLSearchParams(location.search);
+const donorMode = params.has('donor');
+const donorName = (params.get('donor') || '').trim().slice(0, 80);
+const T = donorMode ? {
+  save: 'Save this book', saved: 'Saved to your list. Thank you!', list: 'your list',
+  count: 'Books saved: ', looking: 'looking it up'
+} : {
+  save: 'Save to Google Sheet', saved: 'Added to the sheet.', list: 'the sheet',
+  count: 'Saved to sheet: ', looking: 'checking the catalog'
+};
+// Only accept a Google Apps Script web app as the save destination.
+function sheetFromParam(v){
+  v = (v || '').trim();
+  if(/^[A-Za-z0-9_-]{20,}$/.test(v)) return 'https://script.google.com/macros/s/' + v + '/exec';
+  if(/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(v)) return v;
+  return '';
+}
 
 /* ============ ISBN helpers ============ */
 function cleanIsbn(raw){
@@ -335,7 +402,7 @@ function newRec(isbn){
   $('curSym').textContent = '$';
   $('priceSrc').textContent = 'Type the price printed on the jacket or back cover.';
   const btn = $('saveBtn');
-  btn.disabled = false; btn.textContent = 'Save to Google Sheet';
+  btn.disabled = false; btn.textContent = T.save;
   setSaveMsg('', '');
   return rec;
 }
@@ -384,7 +451,14 @@ async function lookup(rawIsbn, priceCode){
   // Publisher/author details come from Google Books for every scan; fetched in
   // parallel so it never slows the held / not-held answer.
   bookInfoP = fetchBookInfo(isbn);
-  bookInfoP.then(info => mergeBookInfo(r, info));
+  bookInfoP.then(info => {
+    mergeBookInfo(r, info);
+    // Donors see the title as soon as it's known, whatever the catalog says.
+    if(donorMode && r === rec && r.title && !$('vTitle').textContent){
+      $('vTitle').textContent = r.title;
+      $('vMeta').textContent = 'Check the list price, then save.';
+    }
+  });
   verdict.classList.remove('show');
   spinner.classList.add('show');
 
@@ -458,7 +532,9 @@ async function resolveNoExactMatch(isbn){
 
   const info = await bookInfoP;
   if(!info || !info.title){
-    $('vMeta').textContent = 'No record matches this exact ISBN, and the title couldn\u2019t be identified automatically to check for other editions. Try a title search in Search It.';
+    $('vMeta').textContent = donorMode
+      ? 'We couldn\u2019t find the title automatically. That\u2019s fine: the ISBN is enough, so please save it anyway.'
+      : 'No record matches this exact ISBN, and the title couldn\u2019t be identified automatically to check for other editions. Try a title search in Search It.';
     bump('notheld', isbn);
     return;
   }
@@ -625,9 +701,20 @@ function parseFirstRecord(doc){
 
 function showVerdict(kind, status, isbn, title, meta, holdings){
   spinner.classList.remove('show');
-  verdict.className = 'verdict show ' + kind;
   const forRec = rec && isbn && rec.isbn === isbn;
   if(forRec) rec.status = STATUS_LABELS[status] || status;
+  if(donorMode && forRec){
+    // The real catalog result is kept in rec.status for the sheet only.
+    const interim = /Checking for other versions/.test(meta || '');
+    kind = 'found';
+    status = 'READY TO SAVE';
+    title = title || rec.title;
+    meta = interim && !title ? 'Looking up the title\u2026'
+         : title ? 'Check the list price, then save.'
+         : 'We couldn\u2019t find the title automatically. That\u2019s fine: the ISBN is enough, so please save it anyway.';
+    holdings = [];
+  }
+  verdict.className = 'verdict show ' + kind;
   $('saveBox').classList.toggle('show', !!forRec);
   $('vStatus').textContent = status;
   $('vIsbn').textContent = isbn ? 'ISBN ' + isbn : '';
@@ -657,7 +744,8 @@ function bump(kind, label){
   $('tNew').textContent = tallies.notheld;
   $('tUnk').textContent = tallies.unknown;
   const li = document.createElement('li');
-  const tagTxt = kind==='held' ? 'HELD' : kind==='notheld' ? 'NEW' : '??';
+  let tagTxt = kind==='held' ? 'HELD' : kind==='notheld' ? 'NEW' : '??';
+  if(donorMode){ kind = 'unknown'; tagTxt = ''; label = (rec && rec.title) || label.replace(/ \(other version\)$/, ''); }
   li.innerHTML = '<span class="t">' + esc(label) + '</span><span class="tag ' + kind + '">' + tagTxt + '</span>';
   $('history').prepend(li);
   if(rec && !rec.li) rec.li = li;
@@ -681,6 +769,53 @@ $('sheetUrl').addEventListener('change', e => store.set('gts.sheetUrl', e.target
 $('batchIn').addEventListener('change', e => store.set('gts.batch', e.target.value.trim()));
 const sheetUrl = () => $('sheetUrl').value.trim();
 
+if(donorMode){
+  document.body.classList.add('donor');
+  document.title = 'Book Gift Scanner \u00b7 K-State Libraries';
+  $('appTitle').textContent = 'Book Gift Scanner';
+  $('appSub').textContent = 'K-STATE LIBRARIES \u00b7 GIFT LIST';
+  if(donorName) $('donorHello').textContent = 'Book list for ' + donorName;
+  $('sessionHead').textContent = 'Books you\u2019ve saved';
+  $('spinText').textContent = 'Looking up the book\u2026';
+  $('manualGo').textContent = 'Look up';
+  $('batchIn').value = donorName || 'Donor';
+  $('sheetUrl').value = sheetFromParam(params.get('sheet'));
+}
+
+/* ============ Donor link builder (staff view) ============ */
+$('makeLink').addEventListener('click', () => {
+  const name = $('donorNameIn').value.trim();
+  const url = sheetUrl();
+  const msg = $('donorLinkMsg');
+  if(!name){ msg.textContent = 'Type the donor\u2019s name first.'; $('donorNameIn').focus(); return; }
+  if(!url){
+    msg.textContent = 'Add your Google Sheet web app link in Connection settings first.';
+    $('settingsBox').open = true;
+    return;
+  }
+  const m = url.match(/\/macros\/s\/([A-Za-z0-9_-]+)\/exec/);
+  const link = location.origin + location.pathname +
+    '?donor=' + encodeURIComponent(name) + '&sheet=' + encodeURIComponent(m ? m[1] : url);
+  $('donorLinkOut').textContent = link;
+  $('donorLinkOut').hidden = false;
+  $('copyLink').hidden = false;
+  $('copyLink').textContent = 'Copy link';
+  msg.textContent = 'Paste this into an email to ' + name + '. Their books will show \u201c' + name +
+    '\u201d in the Batch / donor column. Open it yourself first if you\u2019d like to see what they\u2019ll see.';
+});
+$('copyLink').addEventListener('click', () => {
+  const box = $('donorLinkOut');
+  const selectIt = () => {
+    const r = document.createRange(); r.selectNodeContents(box);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    $('copyLink').textContent = 'Selected: tap Copy';
+  };
+  try{
+    navigator.clipboard.writeText(box.textContent)
+      .then(() => { $('copyLink').textContent = 'Copied \u2713'; }, selectIt);
+  }catch(e){ selectIt(); }
+});
+
 function setSaveMsg(text, kind){
   const el = $('saveMsg');
   el.textContent = text;
@@ -688,7 +823,7 @@ function setSaveMsg(text, kind){
 }
 
 function updateSheetLine(){
-  $('sheetStatus').textContent = 'Saved to sheet: ' + savedCount;
+  $('sheetStatus').textContent = T.count + savedCount;
   const fb = $('flushBtn');
   fb.style.display = queue.length ? 'inline-block' : 'none';
   fb.textContent = 'Send waiting (' + queue.length + ')';
@@ -733,6 +868,10 @@ $('saveBtn').addEventListener('click', async () => {
   if(!rec || rec.saved) return;
   const r = rec;
   if(!sheetUrl()){
+    if(donorMode){
+      setSaveMsg('This link is missing part of its address, so books can\u2019t be saved. Please ask the library to send the link again.', 'err');
+      return;
+    }
     setSaveMsg('Add your Google Sheet web app link in Connection settings first.', 'err');
     $('settingsBox').open = true;
     $('sheetUrl').focus();
@@ -772,19 +911,19 @@ $('saveBtn').addEventListener('click', async () => {
     r.saved = true;
     savedCount++;
     btn.textContent = 'Saved ✓';
-    setSaveMsg(how === 'confirmed' ? 'Added to the sheet.' : 'Sent to the sheet.', 'ok');
+    setSaveMsg(how === 'confirmed' || donorMode ? T.saved : 'Sent to the sheet.', 'ok');
     markSaved(r, 'SAVED');
     flushQueue();
   }catch(e){
     if(e instanceof SheetError){
-      btn.disabled = false; btn.textContent = 'Save to Google Sheet';
+      btn.disabled = false; btn.textContent = T.save;
       setSaveMsg(e.message, 'err');
     }else{
       queue.push(row);
       store.set('gts.queue', JSON.stringify(queue));
       r.saved = true;
       btn.textContent = 'Waiting to send';
-      setSaveMsg('No connection right now. This book is kept on this phone and will go to the sheet with your next save, or tap “Send waiting.”', '');
+      setSaveMsg('No connection right now. This book is kept on this phone and will go to ' + T.list + ' with your next save, or tap “Send waiting.”', '');
       markSaved(r, 'WAITING');
     }
   }
@@ -1076,7 +1215,7 @@ function handleIsbnRead(isbn, priceCode){
   beep(1175, 140, 0.25);                       // high beep: ISBN captured
   if(navigator.vibrate) navigator.vibrate(60);
   const p = decodeEan5(priceCode);
-  setReadout('Read ISBN ' + isbn + (p ? ' + price' : '') + ' \u2014 checking the catalog\u2026', 3000);
+  setReadout('Read ISBN ' + isbn + (p ? ' + price' : '') + ' \u2014 ' + T.looking + '\u2026', 3000);
   lookup(isbn, priceCode);
 }
 
