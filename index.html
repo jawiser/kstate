@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Gift Triage Scanner · K-State Libraries</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;700;900&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+<style>
+  :root{
+    --purple:#512888;
+    --purple-dark:#3b1d66;
+    --ink:#1f1a26;
+    --paper:#ffffff;
+    --mist:#f3f0f7;
+    --line:#ddd6e8;
+    --held:#1b6e3c;
+    --held-bg:#e8f4ec;
+    --new:#9a5b00;
+    --new-bg:#fdf3e3;
+    --warn:#6b6377;
+    --warn-bg:#f0eef4;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:var(--mist);color:var(--ink);
+    min-height:100vh;
+  }
+  header{
+    background:var(--purple);color:#fff;
+    padding:14px 18px 12px;
+  }
+  header h1{
+    font-family:'Bitter',serif;font-weight:900;font-size:20px;letter-spacing:.2px;
+  }
+  header p{
+    font-family:'IBM Plex Mono',monospace;font-size:11px;opacity:.85;margin-top:2px;letter-spacing:.4px;
+  }
+  main{max-width:560px;margin:0 auto;padding:14px 14px 60px}
+
+  .panel{
+    background:var(--paper);border:1px solid var(--line);border-radius:10px;
+    padding:14px;margin-bottom:14px;
+  }
+  .panel h2{
+    font-family:'Bitter',serif;font-size:14px;font-weight:700;margin-bottom:10px;
+    color:var(--purple-dark);
+  }
+
+  /* Scanner */
+  #reader{
+    width:100%;border-radius:8px;overflow:hidden;background:#14101c;
+    min-height:40px;position:relative;
+  }
+  #reader video{border-radius:8px;display:block;width:100%}
+  #reader canvas.drawingBuffer{
+    position:absolute;top:0;left:0;width:100% !important;height:100% !important;
+    pointer-events:none;
+  }
+  .scanRow{display:flex;gap:8px;margin-top:10px}
+  button{
+    font-family:inherit;font-size:15px;font-weight:600;
+    border:none;border-radius:8px;padding:12px 14px;cursor:pointer;
+  }
+  button:focus-visible{outline:3px solid var(--purple);outline-offset:2px}
+  .btnPrimary{background:var(--purple);color:#fff;flex:1}
+  .btnPrimary:active{background:var(--purple-dark)}
+  .btnGhost{background:var(--mist);color:var(--purple-dark);border:1px solid var(--line)}
+  .manualRow{display:flex;gap:8px;margin-top:10px}
+  input[type=text]{
+    flex:1;font-family:'IBM Plex Mono',monospace;font-size:16px;
+    padding:11px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;
+  }
+  input[type=text]:focus-visible{outline:3px solid var(--purple);outline-offset:1px}
+  .hint{font-size:12px;color:var(--warn);margin-top:8px;line-height:1.45}
+
+  /* Verdict card — styled like an oversized spine label */
+  .verdict{
+    display:none;position:relative;background:var(--paper);
+    border:1px solid var(--line);border-left:14px solid var(--purple);
+    border-radius:10px;padding:16px 16px 16px 18px;margin-bottom:14px;
+  }
+  .verdict.show{display:block}
+  .verdict .status{
+    font-family:'Bitter',serif;font-weight:900;font-size:28px;line-height:1.05;
+  }
+  .verdict.held{border-left-color:var(--held);background:var(--held-bg)}
+  .verdict.held .status{color:var(--held)}
+  .verdict.notheld{border-left-color:var(--new);background:var(--new-bg)}
+  .verdict.notheld .status{color:var(--new)}
+  .verdict.edition{border-left-color:#0f766e;background:#e7f3f1}
+  .verdict.edition .status{color:#0f766e}
+  .verdict.unknown{border-left-color:var(--warn);background:var(--warn-bg)}
+  .verdict.unknown .status{color:var(--warn)}
+  .verdict .isbnLine{
+    font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--warn);
+    margin-top:4px;letter-spacing:.5px;
+  }
+  .verdict .title{
+    font-family:'Bitter',serif;font-weight:700;font-size:16px;margin-top:10px;line-height:1.35;
+  }
+  .verdict .meta{font-size:13px;color:var(--ink);margin-top:6px;line-height:1.5}
+  .holdings{margin-top:8px}
+  .holdings li{
+    list-style:none;font-size:13px;padding:6px 0;border-top:1px dashed var(--line);
+  }
+  .holdings .avail{font-weight:600;color:var(--held)}
+  .holdings .unavail{font-weight:600;color:var(--new)}
+  .verdict .actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+  .spin{
+    display:none;font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--purple-dark);
+    padding:10px 0;
+  }
+  .spin.show{display:block}
+  @keyframes pulse{0%,100%{opacity:.45}50%{opacity:1}}
+  .spin span{animation:pulse 1.1s infinite}
+  @media (prefers-reduced-motion: reduce){.spin span{animation:none}}
+
+  /* Session tally */
+  .tally{display:flex;gap:10px;margin-bottom:10px}
+  .tally div{
+    flex:1;text-align:center;border:1px solid var(--line);border-radius:8px;
+    padding:8px 4px;background:var(--paper);
+  }
+  .tally .num{font-family:'Bitter',serif;font-weight:900;font-size:22px}
+  .tally .lbl{font-size:11px;color:var(--warn);text-transform:uppercase;letter-spacing:.6px}
+  .tally .held .num{color:var(--held)}
+  .tally .notheld .num{color:var(--new)}
+  #history li{
+    list-style:none;display:flex;justify-content:space-between;gap:8px;
+    padding:8px 2px;border-top:1px solid var(--line);font-size:13px;align-items:baseline;
+  }
+  #history .tag{
+    font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;white-space:nowrap;
+  }
+  #history .tag.held{color:var(--held)}
+  #history .tag.notheld{color:var(--new)}
+  #history .tag.unknown{color:var(--warn)}
+  #history .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  /* Save to Google Sheet */
+  .saveBox{
+    display:none;margin-top:14px;padding-top:12px;border-top:2px solid rgba(31,26,38,.12);
+  }
+  .saveBox.show{display:block}
+  .priceRow{display:flex;align-items:center;gap:10px}
+  .priceRow label{font-family:'Bitter',serif;font-weight:700;font-size:15px;white-space:nowrap}
+  .priceWrap{
+    flex:1;min-width:0;display:flex;align-items:center;background:#fff;
+    border:1px solid var(--line);border-radius:8px;padding-left:12px;
+  }
+  .priceWrap span{font-family:'IBM Plex Mono',monospace;font-size:16px;color:var(--warn)}
+  .priceWrap input[type=text]{border:none;padding-left:6px;min-width:0;width:100%}
+  .priceSrc{font-size:12px;color:var(--warn);margin-top:6px;min-height:1em}
+  .saveBox #noteIn{width:100%;margin-top:10px;font-family:inherit;font-size:15px}
+  .saveBox .btnPrimary{width:100%;margin-top:10px}
+  .saveBox .btnPrimary:disabled{background:var(--held);cursor:default}
+  .saveMsg{font-size:13px;margin-top:8px;line-height:1.45;min-height:1em}
+  .saveMsg.err{color:#a3261b;font-weight:600}
+  .saveMsg.ok{color:var(--held);font-weight:600}
+  .sheetLine{
+    display:flex;justify-content:space-between;align-items:center;gap:8px;
+    font-size:13px;margin:10px 0 4px;
+  }
+  .sheetLine button{padding:8px 10px;font-size:13px}
+  #history .tag.saved{color:var(--purple)}
+
+  /* Settings */
+  details summary{
+    cursor:pointer;font-family:'Bitter',serif;font-weight:700;font-size:14px;
+    color:var(--purple-dark);
+  }
+  .field{margin-top:10px}
+  .field label{font-size:12px;font-weight:600;display:block;margin-bottom:4px}
+  .field input{width:100%}
+  .field .testRow{display:flex;gap:8px;align-items:center;margin-top:8px}
+  .field .testRow button{padding:8px 10px;font-size:13px}
+  .field .testRow span{font-size:12px;line-height:1.4}
+  footer{
+    text-align:center;font-size:11px;color:var(--warn);padding:10px;
+    font-family:'IBM Plex Mono',monospace;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Gift Triage Scanner</h1>
+  <p>K-STATE LIBRARIES · CHECKS SEARCH IT / ALMA BY ISBN</p>
+</header>
+
+<main>
+
+  <div class="spin" id="spinner"><span>Checking the catalog…</span></div>
+
+  <div class="verdict" id="verdict" role="status" aria-live="polite">
+    <div class="status" id="vStatus"></div>
+    <div class="isbnLine" id="vIsbn"></div>
+    <div class="title" id="vTitle"></div>
+    <div class="meta" id="vMeta"></div>
+    <ul class="holdings" id="vHoldings"></ul>
+    <div class="saveBox" id="saveBox">
+      <div class="priceRow">
+        <label for="priceIn">List price</label>
+        <div class="priceWrap"><span id="curSym">$</span><input type="text" id="priceIn" inputmode="decimal" placeholder="0.00" autocomplete="off"></div>
+      </div>
+      <div class="priceSrc" id="priceSrc"></div>
+      <input type="text" id="noteIn" placeholder="Note (optional): condition, copies…" aria-label="Note" autocomplete="off">
+      <button class="btnPrimary" id="saveBtn">Save to Google Sheet</button>
+      <div class="saveMsg" id="saveMsg" aria-live="polite"></div>
+    </div>
+    <div class="actions">
+      <button class="btnGhost" id="openPrimo">Open in Search It</button>
+      <button class="btnGhost" id="titleSearch" style="display:none"></button>
+      <button class="btnGhost" id="rawReply" style="display:none">Raw Alma reply</button>
+      <button class="btnGhost" id="scanNext">Scan next book</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Scan the ISBN barcode (back cover)</h2>
+    <div id="reader"></div>
+    <div id="liveRead" style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:var(--purple-dark);min-height:1.3em;padding:6px 2px 0;" aria-live="polite"></div>
+    <div class="scanRow">
+      <button class="btnPrimary" id="toggleCam">Start camera</button>
+    </div>
+    <div class="manualRow">
+      <input type="text" id="manualIsbn" inputmode="numeric" placeholder="…or type the ISBN" aria-label="Type an ISBN">
+      <button class="btnGhost" id="manualGo">Check</button>
+    </div>
+    <p class="hint" id="scanNote" style="opacity:0;transition:opacity .4s;min-height:1em;color:#9a5b00;font-weight:600"></p>
+    <p class="hint">Aim at the barcode that starts with 978 or 979 (usually the larger one, printed above the ISBN number). If the small 5-digit price barcode sits right beside it, keep both in the frame and the list price fills in by itself (iPhone engine). If the camera is blocked in this preview, type the ISBN or open this file in your phone's browser.</p>
+  </div>
+
+  <div class="panel">
+    <h2>This session</h2>
+    <div class="tally">
+      <div class="held"><div class="num" id="tHeld">0</div><div class="lbl">Already held</div></div>
+      <div class="notheld"><div class="num" id="tNew">0</div><div class="lbl">Not in catalog</div></div>
+      <div><div class="num" id="tUnk">0</div><div class="lbl">Check manually</div></div>
+    </div>
+    <div class="field" style="margin-top:0">
+      <label for="batchIn">Gift batch / donor (added to every saved row)</label>
+      <input type="text" id="batchIn" placeholder="e.g., Smith estate, Oct 2026" autocomplete="off">
+    </div>
+    <div class="sheetLine">
+      <span id="sheetStatus">Saved to sheet: 0</span>
+      <button class="btnGhost" id="flushBtn" style="display:none"></button>
+    </div>
+    <ul id="history"></ul>
+  </div>
+
+  <div class="panel">
+    <details id="settingsBox">
+      <summary>Connection settings</summary>
+      <div class="field">
+        <label for="sheetUrl">Google Sheet web app link</label>
+        <input type="text" id="sheetUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
+        <div class="testRow">
+          <button class="btnGhost" id="testSheet">Test connection</button>
+          <span id="testMsg"></span>
+        </div>
+        <p class="hint">Paste the link from the Apps Script “Deploy → Web app” step. Unlike the settings below, this link is remembered on this device.</p>
+      </div>
+      <div class="field">
+        <label for="sruBase">Alma SRU endpoint</label>
+        <input type="text" id="sruBase" value="https://k-state.alma.exlibrisgroup.com/view/sru/01KSU_INST">
+      </div>
+      <div class="field">
+        <label for="proxyBase">Optional proxy prefix (if direct Alma calls are blocked by CORS)</label>
+        <input type="text" id="proxyBase" value="" placeholder="https://your-library-proxy.example.edu/sru?url=">
+      </div>
+      <div class="field">
+        <label for="primoVid">Primo view (vid)</label>
+        <input type="text" id="primoVid" value="01KSU_INST:NewUI">
+      </div>
+      <p class="hint">These three settings apply for this session only. For a permanent deployment, Library IT can edit the defaults at the top of the script and host this file on any web server.</p>
+    </details>
+  </div>
+
+  <footer>PROTOTYPE · ONLY BOOKS YOU SAVE ARE SENT, AND ONLY TO YOUR GOOGLE SHEET</footer>
+</main>
+
+<script>
+/* ============ Config (session defaults; editable in Settings) ============ */
+const cfg = {
+  get sru(){ return document.getElementById('sruBase').value.trim(); },
+  get proxy(){ return document.getElementById('proxyBase').value.trim(); },
+  get vid(){ return document.getElementById('primoVid').value.trim(); },
+  primoBase: 'https://k-state.primo.exlibrisgroup.com/discovery/search',
+  // Library IT: paste the Apps Script web app link here to preset it for everyone.
+  sheetUrlDefault: ''
+};
+
+/* ============ ISBN helpers ============ */
+function cleanIsbn(raw){
+  return (raw||'').replace(/[^0-9Xx]/g,'').toUpperCase();
+}
+function isbn13to10(i13){
+  if(!/^978\d{10}$/.test(i13)) return null;       // 979- ISBNs have no ISBN-10 form
+  const core = i13.slice(3,12);
+  let sum = 0;
+  for(let i=0;i<9;i++) sum += (10-i)*parseInt(core[i],10);
+  let chk = (11 - (sum % 11)) % 11;
+  return core + (chk === 10 ? 'X' : String(chk));
+}
+function validIsbn(s){
+  return /^97[89]\d{10}$/.test(s) || /^\d{9}[\dX]$/.test(s);
+}
+
+/* ============ UI references ============ */
+const $ = id => document.getElementById(id);
+const verdict = $('verdict'), spinner = $('spinner');
+let lastIsbn = '', lastTime = 0, currentIsbn = '';
+const tallies = { held:0, notheld:0, unknown:0 };
+
+/* ============ Current book record (what gets saved to the sheet) ============ */
+let rec = null;
+const STATUS_LABELS = {
+  'ALREADY HELD':'Already held',
+  'OTHER VERSION HELD':'Other version held',
+  'NOT IN CATALOG':'Not in catalog',
+  'NOT THIS ISBN':'No exact ISBN match (unconfirmed)',
+  'CHECK MANUALLY':'Check manually'
+};
+const CUR_SYMBOLS = { USD:'$', CAD:'C$', GBP:'\u00a3', AUD:'A$', NZD:'NZ$' };
+
+function newRec(isbn){
+  rec = { id: isbn + '-' + Date.now(), isbn, title:'', authors:[], publisher:'', year:'',
+          status:'', price:null, currency:'USD', priceSrc:'', saved:false, li:null };
+  $('priceIn').value = '';
+  $('noteIn').value = '';
+  $('curSym').textContent = '$';
+  $('priceSrc').textContent = 'Type the price printed on the jacket or back cover.';
+  const btn = $('saveBtn');
+  btn.disabled = false; btn.textContent = 'Save to Google Sheet';
+  setSaveMsg('', '');
+  return rec;
+}
+
+function setPrice(r, amount, currency, src){
+  r.price = amount; r.currency = currency; r.priceSrc = src;
+  if(r !== rec) return;
+  $('priceIn').value = amount.toFixed(2);
+  $('curSym').textContent = CUR_SYMBOLS[currency] || currency + ' ';
+  $('priceSrc').textContent = 'Filled in from the ' + src.toLowerCase() +
+    (currency !== 'USD' ? ' (' + currency + ')' : '') + '. Edit it if it\u2019s wrong.';
+}
+
+/* The 5-digit add-on beside the ISBN encodes the suggested retail price:
+   first digit is the currency, the rest is the price in cents (52495 = US$24.95). */
+function decodeEan5(s){
+  if(!/^\d{5}$/.test(s || '')) return null;
+  const cur = { '0':'GBP', '1':'GBP', '3':'AUD', '4':'NZD', '5':'USD', '6':'CAD' }[s[0]];
+  const cents = parseInt(s.slice(1), 10);
+  if(!cur || cents === 0 || s.slice(1) === '9999') return null;   // 59999 etc. = "no price given"
+  return { amount: cents / 100, currency: cur };
+}
+
+function mergeBookInfo(r, info){
+  if(!info) return;
+  if(!r.title) r.title = info.title || '';
+  if(!r.authors.length && info.authors) r.authors = info.authors;
+  if(!r.publisher) r.publisher = info.publisher || '';
+  if(!r.year) r.year = info.year || '';
+}
+
+/* ============ Lookup ============ */
+let lastQueryUrl = '';
+let bookInfoP = null;
+
+async function lookup(rawIsbn, priceCode){
+  const isbn = cleanIsbn(rawIsbn);
+  if(!validIsbn(isbn)){
+    showVerdict('unknown','Not an ISBN', isbn, '', 'That barcode doesn\u2019t look like an ISBN. Many books also carry a second UPC barcode; try the one that starts with 978 or 979.', []);
+    return;
+  }
+  currentIsbn = isbn;
+  const r = newRec(isbn);
+  const scanned = decodeEan5(priceCode);
+  if(scanned) setPrice(r, scanned.amount, scanned.currency, 'Price barcode');
+  // Publisher/author details come from Google Books for every scan; fetched in
+  // parallel so it never slows the held / not-held answer.
+  bookInfoP = fetchBookInfo(isbn);
+  bookInfoP.then(info => mergeBookInfo(r, info));
+  verdict.classList.remove('show');
+  spinner.classList.add('show');
+
+  const forms = [isbn];
+  const alt = isbn.length === 13 ? isbn13to10(isbn) : null;
+  if(alt) forms.push(alt);
+
+  // Two attempts: the dedicated ISBN index first, then a general keyword
+  // search for the bare number, which also catches ISBNs stored with
+  // qualifiers or in secondary fields.
+  const attempts = [
+    forms.map(f => 'alma.isbn=' + f).join(' or '),
+    forms.map(f => 'alma.all_for_ui=' + f).join(' or ')
+  ];
+
+  let n = -1, doc = null;
+  try{
+    for(const cql of attempts){
+      const sruUrl = cfg.sru + '?version=1.2&operation=searchRetrieve&recordSchema=marcxml&maximumRecords=5&query=' + encodeURIComponent(cql);
+      lastQueryUrl = cfg.proxy ? cfg.proxy + encodeURIComponent(sruUrl) : sruUrl;
+      const ctrl = new AbortController();
+      const timer = setTimeout(()=>ctrl.abort(), 9000);
+      const res = await fetch(lastQueryUrl, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      const xmlText = await res.text();
+      doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+      const numEl = doc.getElementsByTagNameNS('*','numberOfRecords')[0];
+      if(!numEl){ n = -1; continue; }     // diagnostic or unexpected reply; try next form
+      n = parseInt(numEl.textContent,10);
+      if(n > 0) break;                    // found it; stop trying
+    }
+  }catch(err){
+    spinner.classList.remove('show');
+    showVerdict('unknown','CHECK MANUALLY', isbn, '',
+      'Couldn\u2019t reach Alma directly from this browser (usually a cross-origin block, not a catalog problem). Tap \u201cOpen in Search It\u201d for an instant answer, or add a proxy prefix in Connection settings.', []);
+    bump('unknown', isbn);
+    return;
+  }
+
+  spinner.classList.remove('show');
+  if(n > 0){
+    const { title, year, holdings, author, publisher, price } = parseFirstRecord(doc);
+    r.title = title; r.year = year; r.publisher = publisher;
+    if(author) r.authors = [author];
+    if(price && r.price == null) setPrice(r, price, 'USD', 'Catalog record');
+    const meta = (year ? 'Published ' + year + '. ' : '') +
+      n + (n===1 ? ' catalog record matches' : ' catalog records match') + ' this ISBN.';
+    showVerdict('held','ALREADY HELD', isbn, title, meta, holdings);
+    bump('held', title || isbn);
+  }else if(n === 0){
+    await resolveNoExactMatch(isbn);
+  }else{
+    showVerdict('unknown','CHECK MANUALLY', isbn, '',
+      'Alma answered, but not in the expected format, so this is a query problem rather than a catalog answer. Tap \u201cRaw Alma reply\u201d below and send me what it says.', []);
+    bump('unknown', isbn);
+  }
+}
+
+/* ============ Other-editions pipeline ============
+   The exact ISBN found nothing. Identify the work (Google Books), then
+   search Alma by title + author. Three honest outcomes:
+   - OTHER VERSION HELD: same work, different ISBN (edition / printing / ebook)
+   - NOT IN CATALOG: no exact ISBN and no title/author match either
+   - NOT THIS ISBN: couldn't complete the deeper check; human should confirm */
+let assistTitle = '';
+
+async function resolveNoExactMatch(isbn){
+  showVerdict('notheld','NOT THIS ISBN', isbn, '',
+    'No record matches this exact ISBN. Checking for other versions\u2026', []);
+
+  const info = await bookInfoP;
+  if(!info || !info.title){
+    $('vMeta').textContent = 'No record matches this exact ISBN, and the title couldn\u2019t be identified automatically to check for other editions. Try a title search in Search It.';
+    bump('notheld', isbn);
+    return;
+  }
+  assistTitle = info.title;
+  const who = info.authors && info.authors.length ? ' by ' + info.authors.join(', ') : '';
+
+  const matches = await editionSearch(info);   // array, or null if the check failed
+
+  if(matches && matches.length){
+    showVerdict('edition','OTHER VERSION HELD', isbn, info.title + who,
+      'This exact ISBN isn\u2019t in the catalog, but ' + matches.length +
+      (matches.length === 1 ? ' record matches' : ' records match') +
+      ' the title and author \u2014 likely another edition, printing, or the ebook. Closest matches:',
+      matches.slice(0,3).map(m => ({ lib: m.title, loc: m.year, avail: '', count: '' })));
+    showTitleBtn();
+    bump('held', info.title + ' (other version)');
+  }else if(matches){
+    showVerdict('notheld','NOT IN CATALOG', isbn, info.title + who,
+      'No exact ISBN match, and no other editions matched by title and author either. This one looks genuinely new to the collection.', []);
+    showTitleBtn();
+    bump('notheld', info.title || isbn);
+  }else{
+    showVerdict('notheld','NOT THIS ISBN', isbn, info.title + who,
+      'No exact ISBN match, and the other-editions check didn\u2019t complete. Confirm by title in Search It.', []);
+    showTitleBtn();
+    bump('notheld', info.title || isbn);
+  }
+}
+
+async function fetchBookInfo(isbn){
+  try{
+    const ctrl = new AbortController();
+    const timer = setTimeout(()=>ctrl.abort(), 6000);
+    const r = await fetch('https://www.googleapis.com/books/v1/volumes?q=isbn:' + isbn, { signal: ctrl.signal });
+    clearTimeout(timer);
+    const j = await r.json();
+    const vi = j && j.items && j.items[0] && j.items[0].volumeInfo;
+    if(vi && vi.title) return {
+      title: vi.subtitle ? vi.title + ': ' + vi.subtitle : vi.title,
+      authors: vi.authors || [],
+      publisher: vi.publisher || '',
+      year: ((vi.publishedDate || '').match(/\d{4}/) || [''])[0]
+    };
+  }catch(e){ /* best effort */ }
+  return null;
+}
+
+function normTitle(t){
+  let s = (t || '').split(':')[0];                 // main title only
+  s = s.replace(/["\u201c\u201d&]/g, ' ')
+       .replace(/[^A-Za-z0-9 ]/g, ' ')
+       .replace(/\s+/g, ' ').trim().toLowerCase();
+  const words = s.split(' ').filter(w => w.length);
+  return words.slice(0, 7).join(' ');
+}
+
+function firstAuthorSurname(authors){
+  if(!authors || !authors.length) return '';
+  const parts = authors[0].replace(/[^A-Za-z\- ]/g, ' ').trim().split(/\s+/);
+  const last = parts[parts.length - 1] || '';
+  return last.length >= 2 ? last : '';
+}
+
+async function editionSearch(info){
+  try{
+    const t = normTitle(info.title);
+    if(!t) return [];
+    let cql = 'alma.title all "' + t + '"';
+    const surname = firstAuthorSurname(info.authors);
+    if(surname) cql += ' and alma.creator all "' + surname + '"';
+    const sruUrl = cfg.sru + '?version=1.2&operation=searchRetrieve&recordSchema=marcxml&maximumRecords=4&query=' + encodeURIComponent(cql);
+    lastQueryUrl = cfg.proxy ? cfg.proxy + encodeURIComponent(sruUrl) : sruUrl;
+    const ctrl = new AbortController();
+    const timer = setTimeout(()=>ctrl.abort(), 9000);
+    const res = await fetch(lastQueryUrl, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if(!res.ok) return null;
+    const doc = new DOMParser().parseFromString(await res.text(), 'application/xml');
+    const numEl = doc.getElementsByTagNameNS('*','numberOfRecords')[0];
+    if(!numEl) return null;
+    if(parseInt(numEl.textContent,10) === 0) return [];
+    return parseAllRecords(doc);
+  }catch(e){ return null; }
+}
+
+function showTitleBtn(){
+  if(!assistTitle) return;
+  const btn = $('titleSearch');
+  btn.textContent = 'Check by title in Search It';
+  btn.style.display = 'inline-block';
+}
+
+function parseAllRecords(doc){
+  const out = [];
+  const seen = new Set();
+  const datas = doc.getElementsByTagNameNS('*','recordData');
+  for(const rd of datas){
+    let title = '', year = '';
+    const dfs = rd.getElementsByTagNameNS('*','datafield');
+    for(const df of dfs){
+      const tag = df.getAttribute('tag');
+      const sub = code => {
+        for(const sf of df.children){
+          if(sf.getAttribute && sf.getAttribute('code') === code) return sf.textContent.trim();
+        }
+        return '';
+      };
+      if(tag === '245' && !title){
+        title = (sub('a') + ' ' + sub('b')).replace(/[\/:;,]\s*$/,'').trim();
+      }
+      if((tag === '264' || tag === '260') && !year){
+        const m = (sub('c')||'').match(/\d{4}/); if(m) year = m[0];
+      }
+    }
+    const key = title + '|' + year;
+    if(title && !seen.has(key)){ seen.add(key); out.push({ title, year }); }
+  }
+  return out;
+}
+
+function parseFirstRecord(doc){
+  let title = '', year = '', author = '', publisher = '', price = null;
+  const holdings = [];
+  // Only the first record; later records' fields shouldn't leak in.
+  const first = doc.getElementsByTagNameNS('*','recordData')[0] || doc;
+  const dfs = first.getElementsByTagNameNS('*','datafield');
+  for(const df of dfs){
+    const tag = df.getAttribute('tag');
+    const sub = code => {
+      for(const sf of df.children){
+        if(sf.getAttribute && sf.getAttribute('code') === code) return sf.textContent.trim();
+      }
+      return '';
+    };
+    if(tag === '245' && !title){
+      title = (sub('a') + ' ' + sub('b')).replace(/[\/:;,]\s*$/,'').trim();
+    }
+    if((tag === '264' || tag === '260') && !year){
+      const m = (sub('c')||'').match(/\d{4}/); if(m) year = m[0];
+    }
+    if((tag === '264' || tag === '260') && !publisher && sub('b')){
+      publisher = sub('b').replace(/[\s,:;]+$/,'');
+    }
+    if((tag === '100' || tag === '110') && !author){
+      author = sub('a').replace(/[\s,]+$/,'');
+    }
+    // 020 $c sometimes carries the list price, e.g. "$24.95" or "USD 24.95"
+    if(tag === '020' && price == null){
+      const c = sub('c');
+      const m = c.match(/(?:\$|US\$|USD)\s*(\d+(?:\.\d{1,2})?)/i);
+      if(m) price = parseFloat(m[1]);
+    }
+    if(tag === 'AVA'){
+      holdings.push({
+        lib: sub('q') || sub('b'),
+        loc: sub('c'),
+        avail: sub('e') || sub('t'),
+        count: sub('f')
+      });
+    }
+  }
+  return { title, year, holdings, author, publisher, price };
+}
+
+function showVerdict(kind, status, isbn, title, meta, holdings){
+  spinner.classList.remove('show');
+  verdict.className = 'verdict show ' + kind;
+  const forRec = rec && isbn && rec.isbn === isbn;
+  if(forRec) rec.status = STATUS_LABELS[status] || status;
+  $('saveBox').classList.toggle('show', !!forRec);
+  $('vStatus').textContent = status;
+  $('vIsbn').textContent = isbn ? 'ISBN ' + isbn : '';
+  $('vTitle').textContent = title || '';
+  $('vMeta').textContent = meta || '';
+  $('titleSearch').style.display = 'none';
+  $('rawReply').style.display = (kind !== 'held' && lastQueryUrl) ? 'inline-block' : 'none';
+  const ul = $('vHoldings'); ul.innerHTML = '';
+  for(const h of holdings){
+    const li = document.createElement('li');
+    const availTxt = (h.avail||'').toLowerCase();
+    const cls = availTxt.includes('available') ? 'avail' : 'unavail';
+    li.innerHTML = '<strong>' + esc(h.lib) + '</strong>' +
+      (h.loc ? ' \u00b7 ' + esc(h.loc) : '') +
+      (h.count ? ' \u00b7 ' + esc(h.count) + ' item(s)' : '') +
+      (h.avail ? ' \u00b7 <span class="' + cls + '">' + esc(h.avail) + '</span>' : '');
+    ul.appendChild(li);
+  }
+  verdict.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function esc(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+
+function bump(kind, label){
+  tallies[kind]++;
+  $('tHeld').textContent = tallies.held;
+  $('tNew').textContent = tallies.notheld;
+  $('tUnk').textContent = tallies.unknown;
+  const li = document.createElement('li');
+  const tagTxt = kind==='held' ? 'HELD' : kind==='notheld' ? 'NEW' : '??';
+  li.innerHTML = '<span class="t">' + esc(label) + '</span><span class="tag ' + kind + '">' + tagTxt + '</span>';
+  $('history').prepend(li);
+  if(rec && !rec.li) rec.li = li;
+}
+
+/* ============ Save to Google Sheet ============
+   Rows go to a small Google Apps Script attached to the sheet (see
+   sheet-script.gs). Rows that can't be sent (no signal in the stacks) wait
+   on this device and go out with the next save or the "Send waiting" button. */
+const store = {
+  get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } },
+  set(k, v){ try{ localStorage.setItem(k, v); }catch(e){} }
+};
+let savedCount = 0;
+let queue = [];
+try{ queue = JSON.parse(store.get('gts.queue') || '[]') || []; }catch(e){ queue = []; }
+
+$('sheetUrl').value = store.get('gts.sheetUrl') || cfg.sheetUrlDefault;
+$('batchIn').value = store.get('gts.batch') || '';
+$('sheetUrl').addEventListener('change', e => store.set('gts.sheetUrl', e.target.value.trim()));
+$('batchIn').addEventListener('change', e => store.set('gts.batch', e.target.value.trim()));
+const sheetUrl = () => $('sheetUrl').value.trim();
+
+function setSaveMsg(text, kind){
+  const el = $('saveMsg');
+  el.textContent = text;
+  el.className = 'saveMsg' + (kind ? ' ' + kind : '');
+}
+
+function updateSheetLine(){
+  $('sheetStatus').textContent = 'Saved to sheet: ' + savedCount;
+  const fb = $('flushBtn');
+  fb.style.display = queue.length ? 'inline-block' : 'none';
+  fb.textContent = 'Send waiting (' + queue.length + ')';
+}
+
+function markSaved(r, label){
+  if(!r.li || r.li.querySelector('.tag.saved')) return;
+  const s = document.createElement('span');
+  s.className = 'tag saved'; s.textContent = label;
+  r.li.appendChild(s);
+}
+
+$('priceIn').addEventListener('input', () => {
+  if(!rec) return;
+  rec.priceSrc = 'Typed';
+  $('priceSrc').textContent = 'Typed in.';
+});
+
+class SheetError extends Error {}
+
+async function sendRows(rows){
+  const url = sheetUrl();
+  const body = JSON.stringify({ rows });
+  const headers = { 'Content-Type':'text/plain;charset=utf-8' };  // "simple" request: no CORS preflight
+  let res;
+  try{
+    res = await fetch(url, { method:'POST', headers, body, redirect:'follow' });
+  }catch(e){
+    // Usually the browser refusing to let us *read* Google's reply. Send it
+    // without reading; the script ignores repeat Row IDs, so no duplicates.
+    await fetch(url, { method:'POST', mode:'no-cors', headers, body });
+    return 'sent';
+  }
+  let j = null;
+  try{ j = await res.json(); }catch(e){}
+  if(!j) throw new SheetError('Google answered with a page instead of a confirmation. Check the web app link and that access is set to “Anyone.”');
+  if(!j.ok) throw new SheetError(j.error || 'The sheet script reported an error.');
+  return 'confirmed';
+}
+
+$('saveBtn').addEventListener('click', async () => {
+  if(!rec || rec.saved) return;
+  const r = rec;
+  if(!sheetUrl()){
+    setSaveMsg('Add your Google Sheet web app link in Connection settings first.', 'err');
+    $('settingsBox').open = true;
+    $('sheetUrl').focus();
+    return;
+  }
+  const raw = $('priceIn').value.replace(/[$,\s]/g, '');
+  if(raw && !/^\d+(\.\d{1,2})?$/.test(raw)){
+    setSaveMsg('The price should be a number, like 24.95.', 'err');
+    return;
+  }
+  if(r.priceSrc === 'Typed' || r.price == null){
+    r.price = raw ? parseFloat(raw) : null;
+    if(r.priceSrc !== 'Typed') r.priceSrc = raw ? 'Typed' : '';
+  }
+  mergeBookInfo(r, await Promise.race([bookInfoP, new Promise(ok => setTimeout(ok, 1500))]));
+
+  const row = {
+    id: r.id,
+    savedAt: new Date().toISOString(),
+    isbn: r.isbn,
+    title: r.title,
+    authors: r.authors.join('; '),
+    publisher: r.publisher,
+    year: r.year,
+    status: r.status,
+    price: r.price,
+    currency: r.price == null ? '' : r.currency,
+    priceSource: r.price == null ? '' : r.priceSrc,
+    batch: $('batchIn').value.trim(),
+    note: $('noteIn').value.trim()
+  };
+
+  const btn = $('saveBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try{
+    const how = await sendRows([row]);
+    r.saved = true;
+    savedCount++;
+    btn.textContent = 'Saved ✓';
+    setSaveMsg(how === 'confirmed' ? 'Added to the sheet.' : 'Sent to the sheet.', 'ok');
+    markSaved(r, 'SAVED');
+    flushQueue();
+  }catch(e){
+    if(e instanceof SheetError){
+      btn.disabled = false; btn.textContent = 'Save to Google Sheet';
+      setSaveMsg(e.message, 'err');
+    }else{
+      queue.push(row);
+      store.set('gts.queue', JSON.stringify(queue));
+      r.saved = true;
+      btn.textContent = 'Waiting to send';
+      setSaveMsg('No connection right now. This book is kept on this phone and will go to the sheet with your next save, or tap “Send waiting.”', '');
+      markSaved(r, 'WAITING');
+    }
+  }
+  updateSheetLine();
+});
+
+let flushing = false;
+async function flushQueue(){
+  if(flushing || !queue.length || !sheetUrl()) return;
+  flushing = true;
+  const batch = queue.slice();
+  try{
+    await sendRows(batch);
+    queue = queue.filter(q => !batch.some(b => b.id === q.id));
+    store.set('gts.queue', JSON.stringify(queue));
+    savedCount += batch.length;
+  }catch(e){ /* still offline; keep them */ }
+  flushing = false;
+  updateSheetLine();
+}
+$('flushBtn').addEventListener('click', flushQueue);
+window.addEventListener('online', flushQueue);
+
+$('testSheet').addEventListener('click', async () => {
+  const msg = $('testMsg');
+  const url = sheetUrl();
+  if(!url){ msg.textContent = 'Paste the link first.'; return; }
+  store.set('gts.sheetUrl', url);
+  msg.textContent = 'Checking…';
+  try{
+    const j = await (await fetch(url)).json();
+    msg.textContent = j.ok ? 'Connected to “' + j.sheet + '” (' + j.rows + ' books so far).' : (j.error || 'The script answered with an error.');
+  }catch(e){
+    msg.textContent = 'Couldn’t confirm from this browser. Save one book and check the sheet.';
+  }
+});
+
+updateSheetLine();
+
+/* ============ Primo deep link ============ */
+$('openPrimo').addEventListener('click', () => {
+  if(!currentIsbn) return;
+  const u = cfg.primoBase + '?query=any,contains,' + encodeURIComponent(currentIsbn) +
+            '&vid=' + encodeURIComponent(cfg.vid);
+  window.open(u, '_blank', 'noopener');
+});
+$('titleSearch').addEventListener('click', () => {
+  if(!assistTitle) return;
+  const u = cfg.primoBase + '?query=title,contains,' + encodeURIComponent(assistTitle) +
+            '&vid=' + encodeURIComponent(cfg.vid);
+  window.open(u, '_blank', 'noopener');
+});
+$('rawReply').addEventListener('click', () => {
+  if(lastQueryUrl) window.open(lastQueryUrl, '_blank', 'noopener');
+});
+$('scanNext').addEventListener('click', () => {
+  verdict.classList.remove('show');
+  window.scrollTo({top:0, behavior:'smooth'});
+});
+
+/* ============ Manual entry ============ */
+$('manualGo').addEventListener('click', () => lookup($('manualIsbn').value));
+$('manualIsbn').addEventListener('keydown', e => { if(e.key === 'Enter') lookup(e.target.value); });
+
+/* ============ Sound ============ */
+let audioCtx = null;
+function ensureAudio(){
+  try{
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+  }catch(e){ audioCtx = null; }
+}
+function beep(freq, ms, vol){
+  if(!audioCtx) return;
+  try{
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'square'; o.frequency.value = freq;
+    g.gain.value = vol || 0.2;
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start();
+    setTimeout(() => { try{ o.stop(); o.disconnect(); g.disconnect(); }catch(e){} }, ms);
+  }catch(e){}
+}
+
+/* ============ Live readout ============ */
+const liveRead = $('liveRead');
+let heartbeatLast = 0, dotCount = 0, readoutHold = 0;
+function setReadout(msg, holdMs){
+  liveRead.textContent = msg;
+  readoutHold = Date.now() + (holdMs || 0);
+}
+function heartbeat(){
+  const now = Date.now();
+  if(now < readoutHold || now - heartbeatLast < 600) return;  // don't stomp messages
+  heartbeatLast = now;
+  dotCount = (dotCount + 1) % 4;
+  liveRead.textContent = 'Looking for a barcode' + '.'.repeat(dotCount + 1);
+}
+
+/* ============ Camera ============ */
+let stream = null, video = null, scanning = false;
+let detector = null, usingQuagga = false, rafId = null, lastDetectAt = 0;
+let candidate = '', candidateHits = 0;
+const toggleBtn = $('toggleCam');
+const readerEl = document.getElementById('reader');
+
+toggleBtn.addEventListener('click', async () => {
+  if(scanning){ await stopCam(); return; }
+  ensureAudio();  // must be created inside a user tap for iOS to allow sound
+  toggleBtn.textContent = 'Starting\u2026';
+  try{
+    const native = await tryNativeDetector();
+    if(!native) await startQuagga();
+    scanning = true;
+    toggleBtn.textContent = 'Stop camera';
+    setReadout('Camera on (' + (native ? 'native' : 'Quagga') + ' engine). Hold the barcode 5\u201310 inches away.', 3000);
+  }catch(err){
+    await stopCam();
+    showVerdict('unknown','CAMERA UNAVAILABLE','','',
+      'This environment blocked camera access (common in embedded previews). Type the ISBN below instead, or open this file directly in Safari or Chrome on your phone.',[]);
+  }
+});
+
+/* Path 1: the browser's built-in BarcodeDetector (Apple Vision / Google ML).
+   Far more accurate than any JavaScript decoder when present. */
+async function tryNativeDetector(){
+  if(!('BarcodeDetector' in window)) return false;
+  let fmts = [];
+  try{ fmts = await window.BarcodeDetector.getSupportedFormats(); }catch(e){ return false; }
+  if(!fmts || !fmts.includes('ean_13')) return false;
+  detector = new window.BarcodeDetector({ formats: ['ean_13'] });
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+    audio: false
+  });
+  video = document.createElement('video');
+  video.setAttribute('playsinline', 'true');
+  video.muted = true;
+  video.style.width = '100%';
+  video.style.borderRadius = '8px';
+  readerEl.innerHTML = '';
+  readerEl.appendChild(video);
+  video.srcObject = stream;
+  await video.play();
+  tuneTrack(stream.getVideoTracks()[0]);
+  detectLoop();
+  return true;
+}
+
+function detectLoop(){
+  if(!detector || !video) return;
+  rafId = requestAnimationFrame(detectLoop);
+  const now = Date.now();
+  if(now - lastDetectAt < 90) return;   // ~11 checks per second
+  lastDetectAt = now;
+  detector.detect(video).then(codes => {
+    if(codes && codes.length) acceptRead(codes[0].rawValue, true);
+    else heartbeat();
+  }).catch(() => heartbeat());
+}
+
+/* Path 2: Quagga, a JavaScript decoder built specifically for striped
+   1D retail barcodes (EAN/UPC). Much stronger on these than QR-first
+   libraries. Runs when the browser has no native detector. */
+async function startQuagga(){
+  if(typeof Quagga === 'undefined') throw new Error('decoder unavailable');
+  usingQuagga = true;
+  readerEl.innerHTML = '';
+  await new Promise((resolve, reject) => {
+    Quagga.init({
+      inputStream: {
+        name: 'Live',
+        type: 'LiveStream',
+        target: readerEl,
+        constraints: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+      },
+      locator: { patchSize: 'medium', halfSample: true },
+      numOfWorkers: 0,
+      frequency: 10,
+      // First reader wants the ISBN plus its 5-digit price add-on; the second
+      // catches books with no add-on (or when it's out of frame).
+      decoder: { readers: [
+        { format: 'ean_reader', config: { supplements: ['ean_5_reader'] } },
+        { format: 'ean_reader', config: {} }
+      ] },
+      locate: true
+    }, err => err ? reject(err) : resolve());
+  });
+  Quagga.start();
+  const v = readerEl.querySelector('video');
+  if(v){
+    v.setAttribute('playsinline', 'true');
+    v.muted = true;
+    v.style.width = '100%';
+    v.style.borderRadius = '8px';
+    const t = v.srcObject && v.srcObject.getVideoTracks ? v.srcObject.getVideoTracks()[0] : null;
+    if(t) tuneTrack(t);
+  }
+  Quagga.onProcessed(() => heartbeat());
+  Quagga.onDetected(res => {
+    const cr = res && res.codeResult;
+    if(!cr || !cr.code) return;
+    // With an add-on, Quagga returns ISBN + add-on as one string.
+    const supp = cr.supplement && cr.supplement.code ? cr.supplement.code : '';
+    const main = supp ? cr.code.slice(0, cr.code.length - supp.length) : cr.code;
+    acceptRead(main, false, supp);
+  });
+}
+
+/* Quagga occasionally misreads a digit; the native detector almost never
+   does. So Quagga reads must repeat twice in a row before we accept.
+   The price add-on is kept if any of those agreeing reads caught it. */
+let candidateSupp = '';
+function acceptRead(raw, trusted, supp){
+  const digits = cleanIsbn(String(raw));
+  if(!trusted){
+    if(digits === candidate){ candidateHits++; }
+    else { candidate = digits; candidateHits = 1; candidateSupp = ''; }
+    if(supp) candidateSupp = supp;
+    if(candidateHits < 2){
+      setReadout('Reading\u2026 ' + digits, 600);
+      return;
+    }
+    supp = candidateSupp;
+    candidate = ''; candidateHits = 0; candidateSupp = '';
+  }
+  handleIsbnRead(digits, supp || '');
+}
+
+/* Ask the camera for continuous focus and a touch of zoom, where supported.
+   Zoom lets the phone sit farther from the book while the barcode still
+   fills the frame, which avoids the close-focus blur problem. */
+async function tuneTrack(track){
+  try{
+    if(!track || !track.getCapabilities) return;
+    const caps = track.getCapabilities();
+    const adv = {};
+    let any = false;
+    if(caps.focusMode && Array.from(caps.focusMode).includes('continuous')){
+      adv.focusMode = 'continuous'; any = true;
+    }
+    if(caps.zoom && caps.zoom.max){
+      adv.zoom = Math.min(2, caps.zoom.max); any = true;
+    }
+    if(any) await track.applyConstraints({ advanced: [adv] });
+  }catch(e){ /* best effort; not all browsers expose these */ }
+}
+
+async function stopCam(){
+  if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
+  detector = null;
+  if(usingQuagga){
+    try{ Quagga.stop(); }catch(e){}
+    try{ Quagga.offDetected(); Quagga.offProcessed(); }catch(e){}
+    usingQuagga = false;
+  }
+  if(stream){
+    try{ stream.getTracks().forEach(t => t.stop()); }catch(e){}
+    stream = null;
+  }
+  readerEl.innerHTML = '';
+  video = null;
+  scanning = false;
+  candidate = ''; candidateHits = 0;
+  toggleBtn.textContent = 'Start camera';
+  setReadout('', 0);
+}
+
+function handleIsbnRead(isbn, priceCode){
+  // Only act on real Bookland ISBNs (978/979). Books carry a second UPC
+  // price barcode next to the ISBN; skip anything that isn't the ISBN.
+  if(!/^97[89]\d{10}$/.test(isbn)){
+    beep(220, 90, 0.15);                       // low blip: read something, wrong barcode
+    setReadout('Read ' + isbn + ' \u2014 that\u2019s the price barcode. Slide to the 978/979 one.', 2200);
+    noteSkip();
+    return;
+  }
+  const now = Date.now();
+  if(isbn === lastIsbn && now - lastTime < 4000){   // debounce repeats\u2026
+    // \u2026but a repeat read that finally caught the price add-on can still fill it in.
+    const p = decodeEan5(priceCode);
+    if(p && rec && rec.isbn === isbn && rec.price == null && rec.priceSrc !== 'Typed'){
+      setPrice(rec, p.amount, p.currency, 'Price barcode');
+      beep(880, 80, 0.2);
+    }
+    return;
+  }
+  lastIsbn = isbn; lastTime = now;
+  beep(1175, 140, 0.25);                       // high beep: ISBN captured
+  if(navigator.vibrate) navigator.vibrate(60);
+  const p = decodeEan5(priceCode);
+  setReadout('Read ISBN ' + isbn + (p ? ' + price' : '') + ' \u2014 checking the catalog\u2026', 3000);
+  lookup(isbn, priceCode);
+}
+
+let skipTimer = null;
+function noteSkip(){
+  const el = document.getElementById('scanNote');
+  el.textContent = 'Skipped a price barcode \u2014 aim at the one starting 978 or 979';
+  el.style.opacity = '1';
+  clearTimeout(skipTimer);
+  skipTimer = setTimeout(()=>{ el.style.opacity = '0'; }, 2500);
+}
+</script>
+</body>
+</html>
